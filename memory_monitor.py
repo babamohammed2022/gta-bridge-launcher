@@ -21,11 +21,14 @@ def get_gta_process():
 
 
 def calculate_memory_pools(total_mb):
-    """Calculate memory pools based on total memory"""
+    """Calculate memory pools based on total memory (delegates to pool_planner)"""
+    from managers.pool_planner import recommended_pools
+    from utils.system_utils import SystemUtils
+    pools = recommended_pools(vram_mb=SystemUtils.get_top2007_auto_vram(), ram_mb=total_mb)
     return {
-        'streaming': min(int(total_mb * 0.3), 512),
-        'textures': min(int(total_mb * 0.4), 256),
-        'models': min(int(total_mb * 0.2), 128),
+        'streaming': pools['streaming'],
+        'textures': pools['textures'],
+        'models': pools['models'],
         'max_colors': 1000,
         'max_models': 50000
     }

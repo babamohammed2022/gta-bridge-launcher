@@ -121,11 +121,13 @@ class SystemUtils:
     
     @staticmethod
     def calculate_dynamic_limits(vram_mb: int, ram_mb: int) -> Dict[str, int]:
-        """Calculate optimal limits based on system resources"""
+        """Calculate optimal limits based on system resources (delegates to pool_planner)"""
+        from managers.pool_planner import recommended_pools
+        pools = recommended_pools(vram_mb, ram_mb)
         return {
-            'streaming_memory_mb': min(int(vram_mb * 0.3), 2048),
-            'texture_memory_mb': min(int(vram_mb * 0.4), 1024),
-            'model_memory_mb': min(int(vram_mb * 0.2), 512),
+            'streaming_memory_mb': pools['streaming'],
+            'texture_memory_mb': pools['textures'],
+            'model_memory_mb': pools['models'],
             'max_colors': 1000,
             'max_models': 50000,
         }

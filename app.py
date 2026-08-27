@@ -39,6 +39,14 @@ import limit_adjuster_settings as LAS
 from managers import txdlite
 from managers import mapdata
 
+KNOWN_EXES = {
+    'gta_sa.exe': 'gtasa',
+    'gta_vc.exe': 'gtavc',
+    'gta-vc.exe': 'gtavc',
+    'gta3.exe': 'gta3',
+    'manhunt.exe': 'manhunt',
+}
+
 # NOTE: installer_src.ui.theme registers fonts at import time and MUST be
 # imported after a QApplication exists -> wizard is imported lazily in
 # InstallerScreen._launch(). Palette mirrored here for pre-QApp UI building.
@@ -280,6 +288,19 @@ class PlayScreen(ScreenBase):
 
         self.path_lbl = body(f'Path: {launcher.game_path}')
         form.addWidget(self.path_lbl, 2, 0, 1, 3)
+
+        form.addWidget(body('Game Dir'), 3, 0)
+        self.gamedir_edit = QLineEdit(
+            launcher.config_manager.get_game_path('gtasa') or str(launcher.game_path))
+        self.gamedir_edit.setStyleSheet(
+            f"background:{T.COLOR_PANEL_BG_LIGHT}; color:{T.COLOR_TEXT_BRIGHT};"
+            f"border:1px solid {T.COLOR_DARK_GREEN}; padding:6px;")
+        form.addWidget(self.gamedir_edit, 3, 1)
+        browse_dir = ActionButton('BROWSE')
+        browse_dir.clicked.connect(self._browse_game_dir)
+        form.addWidget(browse_dir, 3, 2)
+        self.detect_lbl = body('')
+        form.addWidget(self.detect_lbl, 4, 0, 1, 3)
         left.addLayout(form)
         left.addStretch(1)
         play_row = QHBoxLayout()
@@ -465,6 +486,35 @@ class PlayScreen(ScreenBase):
             self.exe_edit.setText(fn)
             self.launcher.set_selected_exe(fn)
             self.path_lbl.setText(f'Path: {Path(fn).parent}')
+
+    def _browse_game_dir(self):
+        d = QFileDialog.getExistingDirectory(
+            self, 'Select game folder',
+            self.gamedir_edit.text().strip() or str(Path(self.launcher.game_path)))
+        if not d:
+            return
+        exes = [f.name.lower() for f in Path(d).iterdir()
+                if f.name.lower() in KNOWN_EXES]
+        if not exes:
+            self.detect_lbl.setText('NO GAME EXE FOUND')
+            self.detect_lbl.setStyleSheet('color:#ff5533;')
+            return
+        gid = KNOWN_EXES[exes[0]]
+        try:
+            self.launcher.config_manager.set_game_path(gid, d)
+            ok = True
+        except Exception:
+            ok = False
+        if ok:
+            self.launcher.game_path = Path(d)
+            self.gamedir_edit.setText(d)
+            self.detect_lbl.setText('DETECTED: %s (%s)' % (gid, exes[0]))
+            self.detect_lbl.setStyleSheet('')
+            if hasattr(self, 'path_lbl'):
+                self.path_lbl.setText('Path: %s' % d)
+        else:
+            self.detect_lbl.setText('SAVE FAILED')
+            self.detect_lbl.setStyleSheet('color:#ff5533;')
 
     def _play(self):
         exe = self.exe_edit.text().strip()

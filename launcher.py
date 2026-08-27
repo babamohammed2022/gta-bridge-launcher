@@ -64,6 +64,7 @@ from managers.git_manager import GitManager
 from managers.config_manager import ConfigManager
 from managers.game_manager import GameManager
 from managers.profile_manager import ProfileManager
+from managers.pool_planner import recommended_pools
 from utils.memory_utils import MemoryUtils
 from utils.system_utils import SystemUtils
 
@@ -307,9 +308,15 @@ class GTALauncher:
                 lod_scale = 4.0
             lod_scale = min(6.0, max(1.0, lod_scale))
             try:
-                stream_mb = int(float(self.db_manager.get_limit('gtasa', 'streaming_mem_mb') or 2048))
+                stream_mb = int(float(self.db_manager.get_limit('gtasa', 'streaming_mem_mb') or 0))
             except (TypeError, ValueError):
-                stream_mb = 2048
+                stream_mb = 0
+            if stream_mb <= 0:
+                from utils.system_utils import SystemUtils
+                stream_mb = recommended_pools(
+                    vram_mb=SystemUtils.get_top2007_auto_vram(),
+                    ram_mb=SystemUtils.get_system_memory()
+                )['streaming']
             stream_mb = min(2048, max(256, stream_mb))
             bridge_lines = [
                 '[OPTIONS]',

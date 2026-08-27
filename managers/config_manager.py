@@ -76,3 +76,15 @@ class ConfigManager:
         """Get limit extender URLs for a game"""
         config = self.get_game_config(game)
         return config.get('limit_extenders', {}) if config else {}
+
+    def set_game_path(self, game: str, path: str) -> None:
+        """Persist install_path for a game into games.json"""
+        g = self.games_config.setdefault('games', {}).setdefault(game, {'name': game})
+        g['install_path'] = str(path)
+        with open(self.config_path / 'games.json', 'w', encoding='utf-8') as f:
+            json.dump(self.games_config, f, indent=4)
+
+    def get_game_path(self, game: str) -> Optional[str]:
+        """Retrieve persisted install_path for a game"""
+        c = self.get_game_config(game)
+        return c.get('install_path') if c else None

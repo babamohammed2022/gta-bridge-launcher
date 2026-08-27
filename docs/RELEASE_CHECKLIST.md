@@ -4,7 +4,7 @@
 1. `cd E:/dev(dave)/projects/gta_bridge_launcher`
 2. `E:/dev(dave)/_SAS_1987/87_installer/venv64/Scripts/python.exe -m py_compile app.py launcher.py managers/txdlite.py`
 3. `E:/dev(dave)/_SAS_1987/87_installer/venv64/Scripts/python.exe -m PyInstaller launcher.spec --noconfirm`
-4. Copy to game dir: `dist/launcher.exe -> GTA_Bridge_Launcher.exe`, `managers/txdfix.dll -> txdfix.dll`
+4. Copy to game dir: copy **whole** `dist/GTA_Bridge_Launcher/` folder next to `gta_sa.exe` (exe + `_internal/` together); `managers/txdfix.dll -> txdfix.dll` unchanged. Old single-file `dist/launcher.exe` artifact is retired.
 5. Ensure `launcher_data/` next to exe has: `dlc/index.json`, `packs/presets.json`, `profiles/`
 
 ## Smoke test (frozen exe)
