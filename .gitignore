@@ -1,0 +1,11 @@
+dist/
+build/
+launcher.log
+__pycache__/
+.sadie/
+*.pyc
+nul
+launcher_data/backups/
+launcher_data/dlc/*
+!launcher_data/dlc/index.json
+!launcher_data/dlc/mods_index.json

@@ -1,0 +1,44 @@
+{$CLEO .cs}
+// GTA Bridge Launcher - extra-state save/load via CLEO file storage
+// CLEO 5.4 compatible: uses cleo:\ virtual path prefix (CLEO5 FilepathIsSafe requirement)
+// F8 = write state snapshot to cleo:\bridge_extra.dat; on start the state is restored.
+// Magic 'BRGS' + counter + reserved slot. Vanilla save untouched.
+
+0000: NOP
+thread 'BRGSAVE'
+
+0006: 0@ = 0  // save counter
+0006: 1@ = 0  // reserved
+0006: 3@ = 1397183042  // magic 'BRGS' little-endian
+0006: 4@ = 0  // read scratch
+
+// ---- restore on start ----
+if
+    0A9A: 2@ = open_file "cleo:\bridge_extra.dat" mode 0x6272  // 'rb'
+then
+    0A9D: read_file 2@ size 4 to 4@
+    if
+        0039:   4@ == 1397183042  // magic match
+    then
+        0A9D: read_file 2@ size 4 to 0@
+        0A9D: read_file 2@ size 4 to 1@
+    end
+    0A9B: close_file 2@
+end
+
+:BRGSAVE_LOOP
+0001: wait 500 ms
+if
+    0AB0:   key_pressed 119  // F8
+then
+    000A: 0@ += 1
+    if
+        0A9A: 2@ = open_file "cleo:\bridge_extra.dat" mode 0x6277  // 'wb'
+    then
+        0A9E: write_file 2@ size 4 from 3@
+        0A9E: write_file 2@ size 4 from 0@
+        0A9E: write_file 2@ size 4 from 1@
+        0A9B: close_file 2@
+    end
+end
+0002: jump @BRGSAVE_LOOP

@@ -1,0 +1,256 @@
+[
+  {
+    "id": "hd_vehicle_textures",
+    "name": "HD Vehicle Textures (vehicle.txd)",
+    "category": "models",
+    "default_enabled": true,
+    "layer": 4,
+    "order": 0,
+    "deploy_mode": "overwrite"
+  },
+  {
+    "id": "particle_overhaul",
+    "name": "Particle Overhaul (particle.txd)",
+    "category": "models",
+    "default_enabled": true,
+    "layer": 4,
+    "order": 1,
+    "deploy_mode": "overwrite"
+  },
+  {
+    "id": "model_extras",
+    "name": "Model Extras (mobile details/buttons/beams/envmaps)",
+    "category": "models",
+    "default_enabled": true,
+    "layer": 4,
+    "order": 2,
+    "deploy_mode": "overwrite"
+  },
+  {
+    "id": "bridge_scripts",
+    "name": "Bridge Diagnostics Scripts",
+    "description": "Optional in-game debug overlay assistant for all ASI mods: CLEO HUD (F5 page/F7 toggle) reading stream memory + pools, plus MoonLoader variant.",
+    "version": "1.0",
+    "category": "diagnostics",
+    "default_enabled": true,
+    "file_count": 3,
+    "bytes": 9666
+  },
+  {
+    "id": "d_org_patch_sa",
+    "name": "D_ORG_Patch_SA",
+    "description": "~60 texture fixes restoring original org details.",
+    "version": "1.0",
+    "category": "fixes",
+    "default_enabled": true,
+    "source_priority_hint": null,
+    "file_count": 60,
+    "bytes": 12755317,
+    "stats": {
+      "file_count": 60,
+      "bytes": 12755317,
+      "ext_counts": {
+        ".txd": 58,
+        ".dff": 1,
+        ".ipl": 1
+      }
+    }
+  },
+  {
+    "id": "de_vegetation_by_sa_the_modder",
+    "name": "DE_Vegetation_by_SA_THE_MODDER",
+    "description": "Full vegetation overhaul (gta3.img + maps IDE/IPL/COL). Heavy; off by default.",
+    "version": "1.0",
+    "category": "vegetation",
+    "default_enabled": false,
+    "source_priority_hint": null,
+    "file_count": 184,
+    "bytes": 249762560,
+    "stats": {
+      "file_count": 184,
+      "bytes": 249762560,
+      "ext_counts": {
+        ".dff": 151,
+        ".txd": 21,
+        ".col": 6,
+        ".ide": 5,
+        ".ipl": 1
+      }
+    }
+  },
+  {
+    "id": "gta_v_streetlights",
+    "name": "gta_v_streetlights",
+    "description": "GTA V style streetlights/lamps + object.dat flags.",
+    "version": "1.0",
+    "category": "lighting",
+    "default_enabled": true,
+    "source_priority_hint": null,
+    "file_count": 18,
+    "bytes": 9724649,
+    "stats": {
+      "file_count": 18,
+      "bytes": 9724649,
+      "ext_counts": {
+        ".dff": 12,
+        ".txd": 5,
+        ".dat": 1
+      }
+    }
+  },
+  {
+    "id": "improved_and_fixed_original_vegetation",
+    "name": "Improved and Fixed Original Vegetation",
+    "description": "21 categories of improved original vegetation models.",
+    "version": "1.0",
+    "category": "vegetation",
+    "default_enabled": true,
+    "source_priority_hint": null,
+    "file_count": 142,
+    "bytes": 3113447,
+    "stats": {
+      "file_count": 142,
+      "bytes": 3113447,
+      "ext_counts": {
+        ".dff": 142
+      }
+    }
+  },
+  {
+    "id": "mobile_fences",
+    "name": "mobile_fences",
+    "description": "Mobile-version alpha/fence texture fixes (~57).",
+    "version": "1.0",
+    "category": "fixes",
+    "default_enabled": true,
+    "source_priority_hint": null,
+    "file_count": 57,
+    "bytes": 34991904,
+    "stats": {
+      "file_count": 57,
+      "bytes": 34991904,
+      "ext_counts": {
+        ".txd": 57
+      }
+    }
+  },
+  {
+    "id": "mobile_vegetation",
+    "name": "mobile_vegetation",
+    "description": "Mobile-version vegetation texture fixes (~50).",
+    "version": "1.0",
+    "category": "vegetation",
+    "default_enabled": true,
+    "source_priority_hint": null,
+    "file_count": 82,
+    "bytes": 26468532,
+    "stats": {
+      "file_count": 82,
+      "bytes": 26468532,
+      "ext_counts": {
+        ".txd": 82
+      }
+    }
+  },
+  {
+    "id": "parallax",
+    "name": "Parallax",
+    "description": "LA building parallax remap (dff+txd + LA ide/ipl pairs).",
+    "version": "1.0",
+    "category": "buildings",
+    "default_enabled": true,
+    "source_priority_hint": null,
+    "file_count": 68,
+    "bytes": 202622733,
+    "stats": {
+      "file_count": 68,
+      "bytes": 202622733,
+      "ext_counts": {
+        ".dff": 32,
+        ".txd": 14,
+        ".ide": 11,
+        ".ipl": 10,
+        ".cs": 1
+      }
+    }
+  },
+  {
+    "id": "proper_models",
+    "name": "Proper_models",
+    "description": "Model corrections. Mostly authoring leftovers; off by default.",
+    "version": "1.0",
+    "category": "models",
+    "default_enabled": false,
+    "source_priority_hint": null,
+    "file_count": 4,
+    "bytes": 2455772,
+    "stats": {
+      "file_count": 4,
+      "bytes": 2455772,
+      "ext_counts": {
+        ".dff": 2,
+        ".txd": 2
+      }
+    }
+  },
+  {
+    "id": "proper_paintjobs",
+    "name": "Proper_paintjobs",
+    "description": "Cleaned vehicle paintjob textures.",
+    "version": "1.0",
+    "category": "paintjobs",
+    "default_enabled": true,
+    "source_priority_hint": null,
+    "file_count": 4,
+    "bytes": 13981760,
+    "stats": {
+      "file_count": 4,
+      "bytes": 13981760,
+      "ext_counts": {
+        ".dds": 2,
+        ".txd": 2
+      }
+    }
+  },
+  {
+    "id": "ps2_map_+_fixes",
+    "name": "ps2 map + fixes",
+    "description": "PS2-era streamed IPL/COL/DFF restorations (country interiors, bowl, neon jetty).",
+    "version": "1.0",
+    "category": "map",
+    "default_enabled": true,
+    "source_priority_hint": null,
+    "file_count": 211,
+    "bytes": 6432400,
+    "stats": {
+      "file_count": 211,
+      "bytes": 6432400,
+      "ext_counts": {
+        ".ipl": 117,
+        ".col": 44,
+        ".ide": 41,
+        ".dff": 6,
+        ".txd": 3
+      }
+    }
+  },
+  {
+    "id": "vine_sign",
+    "name": "VINE_SIGN",
+    "description": "Vineyard sign prop fix.",
+    "version": "1.0",
+    "category": "props",
+    "default_enabled": true,
+    "source_priority_hint": null,
+    "file_count": 2,
+    "bytes": 45981,
+    "stats": {
+      "file_count": 2,
+      "bytes": 45981,
+      "ext_counts": {
+        ".dff": 1,
+        ".txd": 1
+      }
+    }
+  }
+]

@@ -1,0 +1,51 @@
+{
+    "games": {
+        "gtasa": {
+            "name": "Grand Theft Auto: San Andreas",
+            "executable": "gta_sa.exe",
+            "year": 2004,
+            "platforms": ["pc"],
+            "limit_extenders": {
+                "thirteenag": "https://github.com/ThirteenAG/III.VC.SA.LimitAdjuster",
+                "fastman92": "https://github.com/fastman92/limit-adjuster-for-gta-sa"
+            },
+            "memory_limit": 2048,
+            "default_limits": {
+                "max_colors": 1000,
+                "max_models": 50000,
+                "streaming_memory_mb": 512,
+                "texture_memory_mb": 256
+            }
+        },
+        "gtavc": {
+            "name": "Grand Theft Auto: Vice City",
+            "executable": "gta_vc.exe",
+            "year": 2002,
+            "platforms": ["pc"],
+            "limit_extenders": {
+                "thirteenag": "https://github.com/ThirteenAG/III.VC.SA.LimitAdjuster"
+            },
+            "memory_limit": 1024,
+            "default_limits": {
+                "max_colors": 256,
+                "max_models": 10000,
+                "streaming_memory_mb": 256
+            }
+        },
+        "gta3": {
+            "name": "Grand Theft Auto III",
+            "executable": "gta3.exe",
+            "year": 2001,
+            "platforms": ["pc"],
+            "limit_extenders": {
+                "thirteenag": "https://github.com/ThirteenAG/III.VC.SA.LimitAdjuster"
+            },
+            "memory_limit": 512,
+            "default_limits": {
+                "max_colors": 256,
+                "max_models": 5000,
+                "streaming_memory_mb": 128
+            }
+        }
+    }
+}

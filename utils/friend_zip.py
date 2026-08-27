@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""friend_zip.py - Build the shareable "friend zip v4" mod-pack archive.
+
+Replaces the manual checklist assembly planned in
+docs/plans/2026-08-26-roadmap-execution.md (Task 6 step 5: "Rebuild friend
+zip from checklist output") and docs/RELEASE_CHECKLIST.md section
+"Distributable (friend zip)".
+
+Read-only over launcher_data/dlc/<pack_id>/ (ground-truth pack folders,
+roadmap Global Constraint #6). The only artifact written is
+<out>/friend_zip_v4_YYYYMMDD.zip (MANIFEST.txt + README.txt live inside
+the zip, so nothing else is ever written outside --out).
+
+Usage: python utils/friend_zip.py [--out DIR] [--packs id1,id2,...]
+"""
+import argparse
+import datetime
+import os
+import re
+import sys
+import zipfile
+from pathlib import Path
+
+PROJECT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT))
+
+from utils.pack_build import JUNK_PATTERNS, is_junk  # noqa: E402
+
+DLC_ROOT = PROJECT / "launcher_data" / "dlc"
+DEFAULT_OUT = PROJECT / "dist"
+ZIP_NAME = "friend_zip_v4_%s.zip"  # % YYYYMMDD
+
+# Friend-zip contents list, derived from the docs:
+#   - docs/RELEASE_CHECKLIST.md "Distributable (friend zip)": "Contents per
+#     FRIEND_TEST_README.txt" -> ASI loader + CLEO runtime, skygfx,
+#     SilentPatch, LimitAdjuster, data patches.
+#   - docs/plans/2026-08-26-roadmap-execution.md Task 3 step 4: "Re-enable
+#     (remove .disabled), add to friend zip contents list" -> the recompiled
+#     gta_bridge_save.cs rides in the cleo_scripts pack (supersedes the older
+#     checklist note "no .cs scripts" for the bridge save script).
+#   - Pack ids are the canonical ones from launcher_data/dlc/index.json.
+#     Community mods (launcher_data/dlc/mods_index.json: Parallax, HD vehicle
+#     textures, ...) are NOT part of the friend zip.
+FRIEND_ZIP_PACKS = [
+    "runtime_redist",   # ASI loader + CLEO/MoonLoader runtime (layer 0)
+    "cleo_scripts",     # bridge CLEO scripts incl. gta_bridge_save.cs (T3 step 4)
+    "skygfx_core",      # skygfx.asi + skygfx.ini
+    "silentpatch",      # SilentPatchSA
+    "limit_adjuster",   # III.VC.SA.LimitAdjuster
+    "data_patches",     # colorcycle.dat / weathers2.dat / map fixes
+]
+
+GAME_VERSION_NOTE = ("Target game: clean GTA San Andreas 1.0 US (hoodlum). "
+                     "Do NOT stack on another modded install.")
+
+# Personal save data — never ship. Excluded from generated zips on top of the
+# shared JUNK_PATTERNS junk filter (pack_build.is_junk). Matches CLEO per-slot
+# save folders (cleo_scripts/cleo/cleo_saves/cs0.sav ... cs7.sav) and any
+# *.sav file anywhere in a pack tree.
+EXCLUDE_PATTERNS = [
+    r"^cleo_saves$",   # cleo_saves/ folder (any depth)
+    r".*\.sav$",       # *.sav save files
+]
+EXCLUDE_RE = [re.compile(p, re.IGNORECASE) for p in EXCLUDE_PATTERNS]
+
+
+def is_excluded(name: str) -> bool:
+    return any(rx.match(name) for rx in EXCLUDE_RE)
+
+
+def collect_pack_files(pack_dir: Path):
+    """Walk one pack folder read-only; return [(abs_path, arcname), ...].
+
+    arcname preserves the pack folder name + internal structure
+    (<pack_id>/<relpath>) — folder names are NEVER renamed (roadmap hard
+    rule #1). JUNK_PATTERNS files/dirs are excluded, plus EXCLUDE_PATTERNS
+    personal save data (cleo_saves/ folders, *.sav files).
+    """
+    entries = []
+    for dirpath, dirnames, filenames in os.walk(pack_dir):
+        dirnames[:] = sorted(d for d in dirnames
+                             if not is_junk(d) and not is_excluded(d))
+        rel_top = Path(dirpath).relative_to(pack_dir)
+        for fn in sorted(filenames):
+            if is_junk(fn) or is_excluded(fn):
+                continue
+            abs_path = Path(dirpath) / fn
+            rel = fn if str(rel_top) == "." else str(rel_top / fn)
+            # forward slashes so the zip extracts identically everywhere
+            entries.append((abs_path, "%s/%s" % (pack_dir.name, rel)))
+    return entries
+
+
+def plan_packs(pack_ids):
+    """Resolve pack ids to (pack_id, entries, stats); warn+skip missing ones.
+
+    stats are computed from the post-filter entry list (not scan_stats) so
+    MANIFEST.txt and the console summary match the zip's actual contents.
+    Returns (planned, skipped_ids).
+    """
+    planned = []
+    skipped = []
+    for pid in pack_ids:
+        pack_dir = DLC_ROOT / pid
+        if not pack_dir.is_dir():
+            print("[WARN] pack folder missing, skipped: %s" % pack_dir)
+            skipped.append(pid)
+            continue
+        entries = collect_pack_files(pack_dir)
+        if not entries:
+            print("[WARN] pack empty after junk filter, skipped: %s" % pid)
+            skipped.append(pid)
+            continue
+        stats = {
+            "file_count": len(entries),
+            "bytes": sum(abs_path.stat().st_size
+                         for abs_path, _arcname in entries),
+        }
+        planned.append((pid, entries, stats))
+    return planned, skipped
+
+
+def make_manifest_txt(planned, skipped, when):
+    """MANIFEST.txt body: pack ids, file counts, byte sizes, date, game note."""
+    lines = [
+        "GTA BRIDGE - FRIEND ZIP v4 MANIFEST",
+        "===================================",
+        "Generated: %s" % when.strftime("%Y-%m-%d %H:%M:%S"),
+        "Builder:   utils/friend_zip.py",
+        "Source:    launcher_data/dlc/<pack_id>/ (ground-truth pack folders)",
+        GAME_VERSION_NOTE,
+        "",
+        "%-42s %8s %12s" % ("pack", "files", "MB"),
+        "-" * 64,
+    ]
+    total_files = 0
+    total_bytes = 0
+    for pid, _entries, stats in planned:
+        total_files += stats["file_count"]
+        total_bytes += stats["bytes"]
+        lines.append("%-42s %8d %12.1f" % (
+            pid, stats["file_count"], stats["bytes"] / 1048576))
+    lines.append("-" * 64)
+    lines.append("%-42s %8d %12.1f" % (
+        "TOTAL (%d packs)" % len(planned), total_files, total_bytes / 1048576))
+    if skipped:
+        lines.append("")
+        lines.append("Skipped (missing/empty): %s" % ", ".join(skipped))
+    lines.append("")
+    lines.append("Install instructions: see README.txt in this zip.")
+    return "\n".join(lines) + "\n"
+
+
+def make_readme_txt(planned):
+    """README.txt body: install instructions for the friend."""
+    pack_list = "\n".join("  - %s" % pid for pid, _e, _s in planned)
+    return "\n".join([
+        "GTA BRIDGE - FRIEND ZIP v4",
+        "==========================",
+        "",
+        "This zip contains the curated mod packs (see MANIFEST.txt for the",
+        "exact per-pack file counts and sizes):",
+        pack_list,
+        "",
+        "HOW TO INSTALL",
+        "--------------",
+        "Option A (recommended - launcher does the placement):",
+        "  1. Put GTA_Bridge_Launcher.exe + txdfix.dll next to gta_sa.exe",
+        "     (from the release build - not inside this zip).",
+        "  2. Run the launcher, open the INSTALLER screen and install this",
+        "     zip - or simply drag-drop this zip onto the MOD LOADER list",
+        "     on the MODS screen.",
+        "",
+        "Option B (manual - Mod Loader drag-drop):",
+        "  Drag the pack FOLDERS from this zip into <game>/modloader/.",
+        "  Mod Loader identifies each folder by its name - NEVER rename",
+        "  the pack folders.",
+        "",
+        "REQUIREMENTS",
+        "------------",
+        GAME_VERSION_NOTE,
+        "",
+        "UNINSTALL",
+        "---------",
+        "Toggle the pack off on the launcher MODS screen, or delete its",
+        "folder from modloader/.",
+        "",
+        "Credits: Magic.TXD / skygfx by dk22pac, SilentPatch by Silent.",
+    ]) + "\n"
+
+
+def write_zip(zip_path: Path, planned, skipped, when):
+    """Write the zip (ZIP_DEFLATED, per installer_src/backup.py pattern)."""
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for _pid, entries, _stats in planned:
+            for abs_path, arcname in entries:
+                try:
+                    zf.write(abs_path, arcname=arcname)
+                except OSError as e:
+                    print("  [WARN] zip write failed %s: %s" % (arcname, e))
+        zf.writestr("MANIFEST.txt", make_manifest_txt(planned, skipped, when))
+        zf.writestr("README.txt", make_readme_txt(planned))
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Build the shareable friend zip v4 from launcher_data/dlc packs.")
+    ap.add_argument("--out", default=str(DEFAULT_OUT),
+                    help="output directory (default: dist/)")
+    ap.add_argument("--packs", default=None,
+                    help="comma-separated pack ids (default: FRIEND_ZIP_PACKS)")
+    args = ap.parse_args()
+
+    if args.packs:
+        pack_ids = [p.strip() for p in args.packs.split(",") if p.strip()]
+    else:
+        pack_ids = list(FRIEND_ZIP_PACKS)
+
+    if not DLC_ROOT.is_dir():
+        print("[FAIL] no dlc root at", DLC_ROOT)
+        return 1
+
+    when = datetime.datetime.now()
+    planned, skipped = plan_packs(pack_ids)
+    if not planned:
+        print("[FAIL] zero packs included; no zip written")
+        return 1
+
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = out_dir / (ZIP_NAME % when.strftime("%Y%m%d"))
+    write_zip(zip_path, planned, skipped, when)
+
+    # Summary table (pack, files, MB) - post-exclusion counts, matches zip
+    print("\n== friend zip v4 summary ==")
+    print("%-42s %8s %10s" % ("pack", "files", "MB"))
+    total_files = 0
+    total_bytes = 0
+    for pid, _entries, stats in planned:
+        total_files += stats["file_count"]
+        total_bytes += stats["bytes"]
+        print("%-42s %8d %10.1f" % (
+            pid, stats["file_count"], stats["bytes"] / 1048576))
+    print("%-42s %8d %10.1f" % (
+        "TOTAL (%d packs)" % len(planned), total_files, total_bytes / 1048576))
+    if skipped:
+        print("skipped: %s" % ", ".join(skipped))
+    print("[OK] wrote %s (%d packs, %d files, %.1f MB)" % (
+        zip_path, len(planned), total_files, total_bytes / 1048576))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

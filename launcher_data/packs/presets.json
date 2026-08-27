@@ -1,0 +1,43 @@
+{
+  "packs": [
+    {
+      "id": "skygfx_plus_full",
+      "name": "SkyGfx Plus Full (our curated install)",
+      "description": "The full layered stack: PS2 map fixes, vegetation, trees, fences, streetlights, parallax — in dependency order.",
+      "order": [
+        "ps2 map + fixes",
+        "skygfx_plus_extras",
+        "Improved and Fixed Original Vegetation",
+        "mobile_vegetation",
+        "mobile_fences",
+        "gta_v_streetlights",
+        "Parallax",
+        "VINE_SIGN",
+        "Proper_paintjobs",
+        "D_ORG_Patch_SA"
+      ],
+      "disabled": [
+        "Bridge Diagnostics Scripts"
+      ]
+    },
+    {
+      "id": "vanilla_plus",
+      "name": "Vanilla+ (fixes only, no visual overhauls)",
+      "description": "Just the fix packs — original look, stability patches.",
+      "order": [
+        "D_ORG_Patch_SA",
+        "Proper_paintjobs"
+      ],
+      "disabled": [
+        "ps2 map + fixes",
+        "skygfx_plus_extras",
+        "Improved and Fixed Original Vegetation",
+        "mobile_vegetation",
+        "mobile_fences",
+        "gta_v_streetlights",
+        "Parallax",
+        "VINE_SIGN"
+      ]
+    }
+  ]
+}

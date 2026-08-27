@@ -1,0 +1,112 @@
+338 INFO: PyInstaller: 6.22.2, contrib hooks: 2026.6
+340 INFO: Python: 3.13.0
+380 INFO: Platform: Windows-10-10.0.19045-SP0
+380 INFO: Python environment: E:\dev(dave)\_SAS_1987\87_installer\venv64
+385 INFO: Module search paths (PYTHONPATH):
+['E:\\dev(dave)\\projects\\gta_bridge_launcher',
+ 'C:\\Users\\aaaaaaaaa\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip',
+ 'C:\\Users\\aaaaaaaaa\\AppData\\Local\\Programs\\Python\\Python313\\DLLs',
+ 'C:\\Users\\aaaaaaaaa\\AppData\\Local\\Programs\\Python\\Python313\\Lib',
+ 'C:\\Users\\aaaaaaaaa\\AppData\\Local\\Programs\\Python\\Python313',
+ 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64',
+ 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages',
+ 'E:\\dev(dave)\\projects\\gta_bridge_launcher']
+782 INFO: Appending 'datas' from .spec
+783 INFO: checking Analysis
+803 INFO: Building because hookspath changed
+803 INFO: Looking for Python shared library...
+803 INFO: Using Python shared library: C:\Users\aaaaaaaaa\AppData\Local\Programs\Python\Python313\python313.dll
+803 INFO: Running Analysis Analysis-00.toc
+803 INFO: Target bytecode optimization level: 0
+803 INFO: Initializing module dependency graph...
+805 INFO: Initializing module graph hook caches...
+833 INFO: Analyzing modules for base_library.zip ...
+1970 INFO: Processing standard module hook 'hook-heapq.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+2009 INFO: Processing standard module hook 'hook-encodings.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+3492 INFO: Processing standard module hook 'hook-math.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+5442 INFO: Processing standard module hook 'hook-pickle.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+7940 INFO: Caching module dependency graph...
+8005 INFO: Analyzing E:\dev(dave)\projects\gta_bridge_launcher\app.py
+8107 INFO: Processing standard module hook 'hook-PyQt5.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+9664 INFO: Processing standard module hook 'hook-PyQt5.QtCore.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+14790 INFO: Processing standard module hook 'hook-PyQt5.QtWidgets.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+23401 INFO: Processing standard module hook 'hook-PyQt5.QtGui.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+74257 INFO: Processing standard module hook 'hook-sqlite3.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+74756 INFO: Processing standard module hook 'hook-psutil.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+74830 INFO: Processing standard module hook 'hook-_ctypes.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+74888 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+74890 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+74987 WARNING: tkinter installation is broken. It will be excluded from the application
+75100 INFO: Processing standard module hook 'hook-platform.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+75436 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+75715 INFO: Processing standard module hook 'hook-xml.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+76516 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+76518 INFO: SetuptoolsInfo: initializing cached setuptools info...
+77234 INFO: Setuptools: 'importlib_metadata' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.importlib_metadata'!
+77243 INFO: Processing standard module hook 'hook-setuptools.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+77264 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+77345 INFO: Processing standard module hook 'hook-sysconfig.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+77352 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+77353 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+77371 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+77372 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+77778 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+79018 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+79361 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+79363 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+79724 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+79724 INFO: Setuptools: 'backports' appears to be a partial setuptools-vendored copy - extending search paths to ['E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\setuptools\\_vendor\\backports', 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\backports']!
+79725 INFO: Processing pre-safe-import-module hook 'hook-backports.tarfile.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+79726 INFO: Setuptools: 'backports.tarfile' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.backports.tarfile'!
+79881 INFO: Processing standard module hook 'hook-backports.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+80324 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+80325 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+81181 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+81182 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+81292 INFO: Processing standard module hook 'hook-setuptools._vendor.importlib_metadata.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+81330 INFO: Processing pre-safe-import-module hook 'hook-zipp.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+81331 INFO: Setuptools: 'zipp' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.zipp'!
+81450 INFO: Processing standard module hook 'hook-Cryptodome.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+83111 INFO: Processing standard module hook 'hook-urllib3.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+83973 INFO: Processing standard module hook 'hook-certifi.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+84050 INFO: Processing standard module hook 'hook-charset_normalizer.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+85198 INFO: Processing module hooks (post-graph stage)...
+85213 WARNING: Hidden import "sip" not found!
+85615 INFO: Processing standard module hook 'hook-webbrowser.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+86245 INFO: Processing standard module hook 'hook-difflib.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+86711 INFO: Performing binary vs. data reclassification (150 entries)
+86980 INFO: Looking for ctypes DLLs
+87046 INFO: Analyzing run-time hooks ...
+87049 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+87054 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+87058 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+87061 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+87065 INFO: Including run-time hook 'pyi_rth_pyqt5.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+87068 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+87072 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyInstaller\\hooks'
+87094 INFO: Creating base_library.zip...
+87183 INFO: Looking for dynamic libraries
+88466 INFO: Extra DLL search directories (AddDllDirectory): ['E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyQt5\\Qt5\\bin']
+88466 INFO: Extra DLL search directories (PATH): ['E:\\dev(dave)\\_SAS_1987\\87_installer\\venv64\\Lib\\site-packages\\PyQt5\\Qt5\\bin']
+90744 INFO: Warnings written to E:\dev(dave)\projects\gta_bridge_launcher\build\launcher\warn-launcher.txt
+90834 INFO: Graph cross-reference written to E:\dev(dave)\projects\gta_bridge_launcher\build\launcher\xref-launcher.html
+90911 INFO: checking PYZ
+90916 INFO: Building because toc changed
+90916 INFO: Building PYZ (ZlibArchive) E:\dev(dave)\projects\gta_bridge_launcher\build\launcher\PYZ-00.pyz
+91885 INFO: Building PYZ (ZlibArchive) E:\dev(dave)\projects\gta_bridge_launcher\build\launcher\PYZ-00.pyz completed successfully.
+91915 INFO: checking PKG
+91926 INFO: Building because toc changed
+91926 INFO: Building PKG (CArchive) launcher.pkg
+105994 INFO: Building PKG (CArchive) launcher.pkg completed successfully.
+106004 INFO: Bootloader E:\dev(dave)\_SAS_1987\87_installer\venv64\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+106004 INFO: checking EXE
+106015 INFO: Building because icon changed
+106015 INFO: Building EXE from EXE-00.toc
+106018 INFO: Copying bootloader EXE to E:\dev(dave)\projects\gta_bridge_launcher\dist\launcher.exe
+106066 INFO: Copying icon to EXE
+106097 INFO: Copying 0 resources to EXE
+106097 INFO: Embedding manifest in EXE
+106116 INFO: Appending PKG archive to EXE
+109318 INFO: Fixing EXE headers
+114092 INFO: Building EXE from EXE-00.toc completed successfully.
+114102 INFO: Build complete! The results are available in: E:\dev(dave)\projects\gta_bridge_launcher\dist

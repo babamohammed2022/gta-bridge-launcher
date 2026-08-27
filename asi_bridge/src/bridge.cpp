@@ -1,0 +1,447 @@
+#include <windows.h>
+#include <string>
+#include <map>
+#include <functional>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+
+// injector + pool struct
+#include "injector/injector.hpp"
+#include "injector/utility.hpp"
+#include "CPool.h"
+
+// ============================================================================
+// GTA Bridge ASI v2 — "builds on top" architecture (m1598)
+//
+// LimitAdjuster.asi = THE limit authority (pool resizing via its own ini,
+//   written by the launcher into III.VC.SA.LimitAdjuster.ini).
+// This ASI NO LONGER patches pool ctor call sites (that caused the
+//   dual-patcher conflict, m1595). Instead it:
+//   - READS live pool usage via CPool* globals (plugin-sdk CPools.cpp)
+//   - patches streaming memory (CStreaming::ms_memoryAvailable 0x8A5F10)
+//   - patches vegetation LOD constants (CPlantMgr, GTAV-recipe scaling)
+//   - runs a per-frame dynamic render-distance scaler driven by pool headroom
+//   - serves the \\.\pipe\gta_bridge protocol for the 64-bit launcher
+// ============================================================================
+
+// -------- helpers --------
+static uint32_t MbToBytes(uint32_t mb) { return mb * 1048576u; }
+static uint32_t BytesToMb(uint32_t b)  { return b / 1048576u; }
+static int vkBridgeText = VK_F5;
+
+static std::string trim(const std::string &s) {
+    size_t a = 0;
+    while (a < s.size() && (s[a]==' '||s[a]=='\t'||s[a]=='\r'||s[a]=='\n')) ++a;
+    size_t b = s.size();
+    while (b > a && (s[b-1]==' '||s[b-1]=='\t'||s[b-1]=='\r'||s[b-1]=='\n')) --b;
+    return s.substr(a, b-a);
+}
+
+// Safe read of uint32 at absolute address
+static bool safeReadU32(uintptr_t addr, uint32_t &out) {
+    __try {
+        out = *(volatile uint32_t*)addr;
+        return true;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// Safe read of float at absolute address
+static bool safeReadFloat(uintptr_t addr, float &out) {
+    __try {
+        out = *(volatile float*)addr;
+        return true;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// -------- Pool globals (plugin-sdk-sa CPools.cpp lines 9-25) --------
+// Pointer-to-pointer globals: the game stores CPool* here after init.
+// LimitAdjuster resizes pools; we read the live objects. NO HOOKING.
+struct PoolGlobal { const char* name; uintptr_t addr; };
+static const PoolGlobal g_poolGlobals[] = {
+    {"PtrNodeSingle",   0xB74484},
+    {"PtrNodeDouble",   0xB74488},
+    {"EntryInfoNode",   0xB7448C},
+    {"Peds",            0xB74490},
+    {"Vehicles",        0xB74494},
+    {"Buildings",       0xB74498},
+    {"Objects",         0xB7449C},
+    {"Dummys",          0xB744A0},
+    {"ColModel",        0xB744A4},
+    {"Task",            0xB744A8},
+    {"Event",           0xB744AC},
+    {"PointRoute",      0xB744B0},
+    {"PatrolRoute",     0xB744B4},
+    {"NodeRoute",       0xB744B8},
+    {"TaskAllocator",   0xB744BC},
+    {"PedIntelligence", 0xB744C0},
+    {"PedAttractors",   0xB744C4},
+};
+
+using GPool = CPool<char,char>;
+
+static bool ReadPoolUsage(uintptr_t globalAddr, int &used, int &maxv) {
+    uint32_t raw = 0;
+    if(!safeReadU32(globalAddr, raw)) return false;
+    GPool* p = (GPool*)(uintptr_t)raw;
+    if(!p) return false;
+    __try {
+        maxv = p->m_Size;
+        if(maxv <= 0 || maxv > 10000000) return false;
+        used = 0;
+        for(int i=0;i<maxv;++i) if(!p->IsFreeSlotAtIndex(i)) ++used;
+        return true;
+    } __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+// Maps for the pipe protocol + overlay
+static std::map<std::string, std::function<bool(int&,int&)>> g_usage;
+
+static void RegisterUsageReaders() {
+    static bool done=false;
+    if(done) return;
+    done=true;
+    for(auto &pg : g_poolGlobals) {
+        uintptr_t addr = pg.addr;
+        g_usage[pg.name] = [addr](int &u,int &m){ return ReadPoolUsage(addr,u,m); };
+    }
+}
+
+// -------- Game dir / ini --------
+static std::string GetGameDir() {
+    char path[MAX_PATH];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    std::string s(path);
+    size_t pos = s.find_last_of("\\/");
+    if(pos != std::string::npos) s = s.substr(0, pos);
+    return s;
+}
+
+// -------- Bridge-specific patches --------
+// Streaming memory: CStreaming::ms_memoryAvailable (default 256MB).
+// VERIFIED address 0x8A5A80 (plugin-sdk-sa CStreaming.cpp:11).
+// LAA ceiling 0x7FFFFFFF (~2048MB) — beyond that, VA fragmentation OOM.
+static void ApplyStreamingMemory(uint32_t mb) {
+    uint64_t bytes = (uint64_t)mb * 1048576u;
+    if(bytes > 0x7FFFFFFFull) bytes = 0x7FFFFFFFull;
+    injector::WriteMemory<uint32_t>(injector::memory_pointer(0x8A5A80), (uint32_t)bytes, true);
+}
+
+// Vegetation (CPlantMgr) GTAV-recipe scaling — DISABLED by default.
+// Addresses from Gemini research were UNVERIFIED and crashed the game
+// (wrote through 0x53BAF4 pointer + float at 0x5DBC3A). Do NOT enable
+// until addresses are verified from gta-reversed CPlantMgr or a binary
+// pattern scan of the actual SA 1.0 US executable.
+static void ApplyVegetationPatches() {
+    // intentionally empty — see comment above
+}
+
+// -------- Dynamic render-distance scaler (per-frame, pool-headroom driven) --------
+// CRenderer::ms_lodDistScale = 0x8CD800 (float, default 1.2) — VERIFIED
+// plugin-sdk-sa CRenderer.cpp:31. MixSets-style knob.
+// Far clip NOT patched: real far clip = m_fFarClip short table at 0xB7B1D0
+// (per-weather/hour), interpolated by CTimeCycle — no safe single float.
+static float g_maxLodScale = 4.0f;
+static float GovernorLodFactor(); // Streaming Supervisor below
+static void DynamicRenderScale() {
+    int u=0,m=0; double head=0.0; int n=0;
+    if(ReadPoolUsage(0xB74498, u, m) && m>0){ head += 1.0-(double)u/(double)m; ++n; } // Buildings
+    if(ReadPoolUsage(0xB7449C, u, m) && m>0){ head += 1.0-(double)u/(double)m; ++n; } // Objects
+    if(!n) return;
+    head /= (double)n;
+    // base 1.2 (stock default) scaled by headroom up to 1.2*max_scale
+    float scale = (float)(1.2 * (1.0 + head * (double)(g_maxLodScale-1.0f)));
+    if(scale < 1.2f) scale = 1.2f;
+    float cap = 1.2f * g_maxLodScale * GovernorLodFactor();
+    if(scale > cap) scale = cap;
+    injector::WriteMemory<float>(injector::memory_pointer(0x8CD800), scale, true);
+}
+
+// -------- Streaming Supervisor v1 (PS2-throttle removal) --------
+// VERIFIED addresses (plugin-sdk-sa CStreaming.cpp):
+//   RemoveAllUnusedModels   0x40CF80
+//   RemoveBigBuildings      0x4093B0
+//   PurgeRequestList        0x40C1E0
+//   LoadAllRequestedModels  0x40EA10 (bool bOnlyPriorityRequests)
+// DVD-era design loads one small block per channel per frame; we add a
+// supervisor that drains priority requests every tick and evicts unused
+// models under memory pressure so load/unload tracks actual demand.
+static bool GetMemUsage(int &availMb, int &usedMb); // fwd
+static bool g_streamGovernor = true;
+static float g_pressSoft = 0.85f, g_pressHard = 0.93f;
+static float g_fpsMin = 40.0f, g_fpsMax = 55.0f;
+static float g_fpsAvg = 60.0f;
+static uint32_t g_fpsTick = 0, g_fpsFrames = 0, g_supTick = 0;
+
+typedef void (*FnVoid)();
+static FnVoid CStream_RemoveAllUnused = (FnVoid)0x40CF80;
+static FnVoid CStream_RemoveBigBuildings = (FnVoid)0x4093B0;
+static FnVoid CStream_PurgeRequestList = (FnVoid)0x40C1E0;
+typedef void (*FnLoadAll)(bool);
+static FnLoadAll CStream_LoadAllRequested = (FnLoadAll)0x40EA10;
+
+// FPS-based multiplier applied to the lodDistScale cap (1.0 when healthy).
+static float GovernorLodFactor() {
+    if(!g_streamGovernor) return 1.0f;
+    if(g_fpsAvg >= g_fpsMax) return 1.0f;
+    if(g_fpsAvg <= g_fpsMin * 0.6f) return 0.5f;
+    if(g_fpsAvg <= g_fpsMin) return 0.7f;
+    float t = (g_fpsAvg - g_fpsMin) / (g_fpsMax - g_fpsMin);
+    return 0.7f + 0.3f * t;
+}
+
+static void StreamingSupervisor() {
+    // rolling FPS (1s window)
+    uint32_t now = GetTickCount();
+    ++g_fpsFrames;
+    if(!g_fpsTick) { g_fpsTick = now; }
+    else if(now - g_fpsTick >= 1000) {
+        g_fpsAvg = 1000.0f * (float)g_fpsFrames / (float)(now - g_fpsTick);
+        g_fpsFrames = 0; g_fpsTick = now;
+    }
+    if(!g_streamGovernor) return;
+    if(now - g_supTick < 750) return; // ~1.3 Hz decision rate
+    g_supTick = now;
+    int a=-1,u=-1;
+    if(!GetMemUsage(a,u) || a<=0) return;
+    float pressure = (float)u / (float)a;
+    if(pressure >= g_pressHard) {
+        CStream_PurgeRequestList();
+        CStream_RemoveBigBuildings();
+        CStream_RemoveAllUnused();
+    } else if(pressure >= g_pressSoft) {
+        CStream_RemoveAllUnused();
+    } else {
+        CStream_LoadAllRequested(true); // fast-drain priority queue while headroom exists
+    }
+}
+
+// -------- Bridge ini ([OPTIONS] + [BRIDGE]) --------
+static uint32_t g_streamingMemMb = 1024;
+static bool g_vegetationBoost = false;
+
+static void ApplyBridgeIni(const std::string &iniPath) {
+    std::ifstream f(iniPath);
+    if(!f) return;
+    std::string line, section;
+    while(std::getline(f, line)) {
+        std::string t = trim(line);
+        if(t.empty() || t[0]==';' || t[0]=='#' || t[0]=='/') continue;
+        if(t.front()=='[' && t.back()==']') {
+            section = trim(t.substr(1, t.size()-2));
+            for(char &c: section) c = toupper(c);
+            continue;
+        }
+        if(section!="OPTIONS" && section!="BRIDGE") continue;
+        auto eq=t.find('=');
+        if(eq==std::string::npos) continue;
+        std::string k=trim(t.substr(0,eq)); std::string v=trim(t.substr(eq+1));
+        for(char &c:k) c=toupper(c);
+        auto sc = v.find(';');
+        if(sc!=std::string::npos) v = trim(v.substr(0,sc));
+        if(k=="DEBUGTEXTKEY"){ try{ vkBridgeText=std::stoi(v,nullptr,0);}catch(...){} }
+        else if(k=="STREAMING_MEM_MB"){ try{ g_streamingMemMb=(uint32_t)std::stoul(v);}catch(...){} }
+        else if(k=="MAX_LOD_SCALE"){ try{ g_maxLodScale=std::stof(v);}catch(...){} }
+        else if(k=="VEGETATION_BOOST"){ g_vegetationBoost = (v=="1"||v=="true"||v=="yes"); }
+        else if(k=="STREAM_GOVERNOR"){ g_streamGovernor = (v=="1"||v=="true"||v=="yes"); }
+        else if(k=="PRESS_SOFT"){ try{ g_pressSoft=std::stof(v);}catch(...){} }
+        else if(k=="PRESS_HARD"){ try{ g_pressHard=std::stof(v);}catch(...){} }
+        else if(k=="FPS_MIN"){ try{ g_fpsMin=std::stof(v);}catch(...){} }
+        else if(k=="FPS_MAX"){ try{ g_fpsMax=std::stof(v);}catch(...){} }
+    }
+}
+
+// -------- Pipe server --------
+static const char* PIPE_NAME = "\\\\.\\pipe\\gta_bridge";
+// Mirage Pool v1: launcher-owned shared section (64-bit side creates, we map a view)
+static const char* SHM_NAME = "GTA_BRIDGE_SHM";
+static HANDLE g_shmHandle = NULL;
+static void* g_shmView = nullptr;
+static size_t g_shmSize = 0;
+static volatile bool g_shutdown = false;
+static HANDLE g_thread = NULL;
+
+static bool GetMemUsage(int &availMb, int &usedMb) {
+    uint32_t availRaw=0, usedRaw=0;
+    if(!safeReadU32(0x8A5A80, availRaw)) return false;
+    if(!safeReadU32(0x8E4CB4, usedRaw)) return false;
+    availMb = (int)BytesToMb(availRaw);
+    usedMb  = (int)BytesToMb(usedRaw);
+    return true;
+}
+
+static injector::hook_back<void(*)()> DrawHUD;
+static uint32_t current_limit = 0;
+static const uint32_t limits_per_page = 18;
+static float currposx, currposy;
+static bool BeginDraw(){ currposx=10.0f; currposy=105.0f; return true; }
+static void EndDraw(){ static void (*RenderFontBuffer)() = injector::lazy_pointer<0x719840>::get(); RenderFontBuffer(); }
+static void DrawTextInternal(const char* text, float x, float y, float sx, float sy){
+    struct CRGBA{ unsigned char r,g,b,a; CRGBA(unsigned char R,unsigned char G,unsigned char B,unsigned char A):r(R),g(G),b(B),a(A){} CRGBA(){} };
+    static void* pInterfaceColour = injector::lazy_pointer<0xBAB22C>::get();
+    static void* pGetInterfaceColour = injector::lazy_pointer<0x58FEA0>::get();
+    static int* pRsGlobal = injector::lazy_pointer<0xC17040>::get();
+    static void (*SetScale)(float,float) = injector::lazy_pointer<0x719380>::get();
+    static void (*SetColor)(void*) = injector::lazy_pointer<0x719430>::get();
+    static void (*SetFontStyle)(short) = injector::lazy_pointer<0x719490>::get();
+    static void (*SetDropColor)(CRGBA) = injector::lazy_pointer<0x719510>::get();
+    static void (*SetEdge)(short) = injector::lazy_pointer<0x719590>::get();
+    static void (*SetProportional)(bool) = injector::lazy_pointer<0x7195B0>::get();
+    static void (*SetBackground)(bool,bool) = injector::lazy_pointer<0x7195C0>::get();
+    static void (*SetJustify)(bool) = injector::lazy_pointer<0x719600>::get();
+    static void (*SetRightJustifyWrap)(float) = injector::lazy_pointer<0x7194F0>::get();
+    static void (*SetWrapx)(float) = injector::lazy_pointer<0x7194D0>::get();
+    static void (*SetOrientation)(int) = injector::lazy_pointer<0x719610>::get();
+    static void (*PrintString)(float,float,const char*) = injector::lazy_pointer<0x71A700>::get();
+    CRGBA rgba(0x1B,0x59,0x82,0xFF);
+    if(pGetInterfaceColour && pInterfaceColour) ((CRGBA*(__thiscall*)(void*,CRGBA*,unsigned char))pGetInterfaceColour)(pInterfaceColour,&rgba,4);
+    float screenx = (float)((signed int)*(pRsGlobal+1))/640.0f;
+    float screeny = (float)((signed int)*(pRsGlobal+2))/448.0f;
+    SetFontStyle(1); SetJustify(0); SetBackground(0,0); SetProportional(true); SetOrientation(1); SetRightJustifyWrap(0); SetWrapx(640.0f*screenx); SetEdge(1); SetDropColor(CRGBA(0,0,0,0xFF)); SetColor(&rgba); SetScale(screenx*sx, screeny*sy);
+    PrintString(screenx*x, screeny*y, text);
+}
+static void DrawText(const char* t){ const float x=currposx,y=currposy; const float sx=0.60f*0.65f,sy=0.89f*0.65f; currposy+=sy*20; DrawTextInternal(t,x,y,sx,sy); }
+static void DrawLine(const char* n,const char* v){ char b[1024]; sprintf(b,"%s: %s",n,v); DrawText(b); }
+static bool TestShouldDraw(){
+    static bool should=false, prev=false, curr=false;
+    curr=(GetKeyState(vkBridgeText)&0x8000)!=0;
+    if(curr && !prev){ if(!should){ current_limit=0; should=true; } else { current_limit+=limits_per_page; should=current_limit<g_usage.size(); } }
+    prev=curr; return should;
+}
+static void DrawBridgeOverlay(){
+    DrawHUD.fun?DrawHUD.fun():void();
+    // dynamic render scale runs EVERY frame (before any early return)
+    DynamicRenderScale();
+    // streaming supervisor: pressure-driven eviction + priority fast-load drain
+    StreamingSupervisor();
+    if(!TestShouldDraw() || !BeginDraw()) return;
+    // header
+    DrawText("GTA BRIDGE — diag (F5 page)");
+    // system mem vs streaming mem
+    MEMORYSTATUSEX sys{sizeof(sys)}; if(GlobalMemoryStatusEx(&sys)){ char b[128]; sprintf(b,"SYS RAM: %llu / %llu MB (load %lu%%)", (sys.ullTotalPhys - sys.ullAvailPhys)/1048576, sys.ullTotalPhys/1048576, sys.dwMemoryLoad); DrawText(b); }
+    int a=-1,u=-1; if(GetMemUsage(a,u)){ char b[64]; sprintf(b,"STREAM MEM avail %d used %d MB",a,u); DrawText(b); }
+    { char b[64]; sprintf(b,"LOD scale: %.2f (max %.2f)", g_maxLodScale>0?1.0f:g_maxLodScale, g_maxLodScale); DrawText(b); }
+    // SkyGfx hint if present
+    { std::ifstream f(GetGameDir()+"\\skygfx.ini"); if(f){ DrawText("SkyGfx: present (PS2/Xbox pipes)"); } }
+    // pools paged
+    unsigned i=0,drawn=0;
+    for(auto &kv: g_usage){ if(i>=current_limit && (i<current_limit+limits_per_page || drawn<limits_per_page)){ int used=-1,maxv=-1; if(kv.second(used,maxv)){ char ub[64]; sprintf(ub,"%d / %d",used,maxv); DrawLine(kv.first.c_str(),ub); ++drawn; } } ++i; }
+    EndDraw();
+}
+static void PatchDrawer(){ DrawHUD.fun = injector::MakeCALL(0x53E4FF, DrawBridgeOverlay).get(); }
+
+static DWORD WINAPI PipeServerThread(LPVOID) {
+    while(!g_shutdown) {
+        HANDLE hPipe = CreateNamedPipeA(
+            PIPE_NAME,
+            PIPE_ACCESS_DUPLEX,
+            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+            1, 4096, 4096, 0, NULL);
+        if(hPipe==INVALID_HANDLE_VALUE) { Sleep(500); continue; }
+        BOOL connected = ConnectNamedPipe(hPipe, NULL) ? TRUE : (GetLastError()==ERROR_PIPE_CONNECTED);
+        if(!connected) { CloseHandle(hPipe); if(g_shutdown) break; continue; }
+        // serve this client until disconnect
+        char buf[1024];
+        DWORD readBytes=0;
+        while(!g_shutdown) {
+            BOOL ok = ReadFile(hPipe, buf, sizeof(buf)-1, &readBytes, NULL);
+            if(!ok || readBytes==0) break;
+            buf[readBytes]='\0';
+            std::string line(buf, readBytes);
+            line = trim(line);
+            std::string reply;
+            if(line=="HELLO") {
+                reply = "OK GTABRIDGE 2.0\n";
+            } else if(line=="PING") {
+                reply = "PONG\n";
+            } else if(line=="STATUS") {
+                reply = "STATUS alive\n";
+            } else if(line=="MEM") {
+                int a=-1,u=-1;
+                if(GetMemUsage(a,u)) { char tmp[64]; sprintf(tmp,"MEM %d %d\n",a,u); reply=tmp; }
+                else reply="MEM -1 -1\n";
+            } else if(line.rfind("USAGE",0)==0) {
+                std::string name = trim(line.size()>5?line.substr(5):"");
+                int used=-1,maxv=-1;
+                auto it=g_usage.find(name);
+                if(it!=g_usage.end() && it->second(used,maxv)) {
+                    char tmp[128]; sprintf(tmp,"USAGE %s %d %d\n",name.c_str(),used,maxv); reply=tmp;
+                } else {
+                    char tmp[128]; sprintf(tmp,"USAGE %s -1 -1\n",name.c_str()); reply=tmp;
+                }
+            } else if(line.rfind("SHM_OPEN",0)==0) {
+                // SHM_OPEN <size_mb> — map launcher-created shared section
+                std::string arg = trim(line.size()>8?line.substr(8):"");
+                try {
+                    size_t mb = (size_t)std::stoul(arg);
+                    size_t bytes = mb * 1024 * 1024;
+                    if(g_shmView) { reply="OK SHM already\n"; }
+                    else {
+                        g_shmHandle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, SHM_NAME);
+                        if(!g_shmHandle) { reply="ERR shm open failed\n"; }
+                        else {
+                            g_shmView = MapViewOfFile(g_shmHandle, FILE_MAP_ALL_ACCESS, 0, 0, bytes);
+                            if(!g_shmView) { CloseHandle(g_shmHandle); g_shmHandle=NULL; reply="ERR shm map failed\n"; }
+                            else { g_shmSize = bytes; char tmp[64]; sprintf(tmp,"OK SHM %zu\n", bytes); reply=tmp; }
+                        }
+                    }
+                } catch(...) { reply="ERR shm arg\n"; }
+            } else if(line.rfind("SHM_READ",0)==0) {
+                // SHM_READ <offset> <len> — hex dump of shared bytes
+                if(!g_shmView) { reply="ERR shm not open\n"; }
+                else {
+                    size_t off=0, len=0;
+                    sscanf(line.c_str(), "SHM_READ %zu %zu", &off, &len);
+                    if(len>256) len=256;
+                    if(off+len>g_shmSize) { reply="ERR shm range\n"; }
+                    else {
+                        unsigned char* p = (unsigned char*)g_shmView + off;
+                        std::string hex="OK SHMREAD ";
+                        char hx[4];
+                        for(size_t i=0;i<len;++i){ sprintf(hx,"%02X",p[i]); hex+=hx; }
+                        hex+="\n"; reply=hex;
+                    }
+                }
+            } else if(line=="SHM_STAT") {
+                char tmp[96]; sprintf(tmp,"SHMSTAT %p %p %zu\n",(void*)g_shmHandle,g_shmView,g_shmSize); reply=tmp;
+            } else {
+                reply="ERR unknown\n";
+            }
+            DWORD written=0;
+            WriteFile(hPipe, reply.c_str(), (DWORD)reply.size(), &written, NULL);
+            FlushFileBuffers(hPipe);
+        }
+        DisconnectNamedPipe(hPipe);
+        CloseHandle(hPipe);
+    }
+    return 0;
+}
+
+// -------- DllMain --------
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
+    if(reason==DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(hModule);
+        std::string gameDir = GetGameDir();
+        ApplyBridgeIni(gameDir + "\\gta_bridge.ini");
+        RegisterUsageReaders();
+        ApplyStreamingMemory(g_streamingMemMb);
+        if(g_vegetationBoost) ApplyVegetationPatches();
+        PatchDrawer();
+        g_shutdown = false;
+        g_thread = CreateThread(NULL, 0, PipeServerThread, NULL, 0, NULL);
+    } else if(reason==DLL_PROCESS_DETACH) {
+        g_shutdown = true;
+        // wake pipe if waiting: connect as client to unblock ConnectNamedPipe
+        HANDLE h = CreateFileA(PIPE_NAME, GENERIC_READ|GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        if(h!=INVALID_HANDLE_VALUE) CloseHandle(h);
+        if(g_thread) { WaitForSingleObject(g_thread, 1500); CloseHandle(g_thread); g_thread=NULL; }
+    }
+    return TRUE;
+}

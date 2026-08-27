@@ -1,0 +1,83 @@
+[
+  {
+    "id": "runtime_redist",
+    "name": "Runtime Redistributables (CLEO/ModLoader/MoonLoader)",
+    "category": "runtime",
+    "default_enabled": true,
+    "layer": 0,
+    "order": 0,
+    "deploy_mode": "root"
+  },
+  {
+    "id": "cleo_scripts",
+    "name": "CLEO Scripts",
+    "category": "scripting",
+    "default_enabled": true,
+    "layer": 0,
+    "order": 1,
+    "deploy_mode": "dircopy"
+  },
+  {
+    "id": "moonloader_scripts",
+    "name": "MoonLoader Scripts",
+    "category": "scripting",
+    "default_enabled": true,
+    "layer": 0,
+    "order": 2,
+    "deploy_mode": "dircopy"
+  },
+  {
+    "id": "skygfx_core",
+    "name": "SkyGfx Core (ASI + configs)",
+    "category": "graphics",
+    "default_enabled": true,
+    "layer": 1,
+    "order": 0,
+    "deploy_mode": "root"
+  },
+  {
+    "id": "silentpatch",
+    "name": "SilentPatch SA",
+    "category": "fixes",
+    "default_enabled": true,
+    "layer": 1,
+    "order": 1,
+    "deploy_mode": "root"
+  },
+  {
+    "id": "limit_adjuster",
+    "name": "III.VC.SA.LimitAdjuster",
+    "category": "limits",
+    "default_enabled": true,
+    "layer": 1,
+    "order": 2,
+    "deploy_mode": "root"
+  },
+  {
+    "id": "neo_effects",
+    "name": "NEO Effects (cartweaks + textures)",
+    "category": "effects",
+    "default_enabled": true,
+    "layer": 2,
+    "order": 0,
+    "deploy_mode": "dircopy"
+  },
+  {
+    "id": "data_patches",
+    "name": "Data Patches (colorcycle/weathers/seabed)",
+    "category": "data",
+    "default_enabled": true,
+    "layer": 3,
+    "order": 0,
+    "deploy_mode": "overwrite"
+  },
+  {
+    "id": "skygfx_plus_extras",
+    "name": "SkyGfx Plus Extras (our install pack: vegetation/trees/fences/props)",
+    "category": "pack",
+    "default_enabled": true,
+    "layer": 4,
+    "order": 0,
+    "deploy_mode": "modloader"
+  }
+]

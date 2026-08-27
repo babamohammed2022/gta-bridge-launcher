@@ -1,0 +1,12 @@
+{
+    "app_name": "GTA Bridge Launcher",
+    "version": "1.0.0",
+    "default_game": "gtasa",
+    "game_path": "E:/games/gtasa_skygfx_plus",
+    "auto_update": true,
+    "backup_enabled": true,
+    "max_backup_count": 5,
+    "log_level": "INFO",
+    "theme": "dark",
+    "language": "en"
+}
