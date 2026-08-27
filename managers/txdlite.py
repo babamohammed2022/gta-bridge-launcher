@@ -439,6 +439,7 @@ def encode_replace(tex, img):
     tex.mips = mips
     tex.num_levels = len(mips)
     tex.flags |= FLAG_ALPHA if any(p[3] != 255 for p in img.getdata()) else tex.flags & FLAG_ALPHA
+    tex.dirty = True
 
 
 # ---------------------------------------------------------------- mip health
