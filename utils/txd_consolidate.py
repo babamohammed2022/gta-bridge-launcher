@@ -615,7 +615,10 @@ if __name__ == "__main__":
     args = p.parse_args()
 
     if args.apply and not args.force_experimental:
-        print("[HOLD] EXPERIMENTAL: 2 CTDs on daily driver 2026-08-27 (null tex-dict deref at boot).")
+        print("[HOLD] EXPERIMENTAL: 3 CTDs on daily driver 2026-08-27 (null tex-dict deref at boot).")
+        print("       In-place strip, pack gta.dat merge, AND priority-100 override pack ALL crashed.")
+        print("       Suspects: txdp parent auto-stream under DXVK/d3d9-proxy, ML gta.dat merge interplay.")
+        print("       Requires dev-copy harness (launcher game picker -> dev dir) + CTD symbolization.")
         print("       Override ONLY with: --apply --force-experimental")
         sys.exit(2)
     if args.apply:

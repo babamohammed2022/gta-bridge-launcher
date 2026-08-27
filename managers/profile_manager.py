@@ -181,16 +181,10 @@ class ProfileManager:
                 pass
 
         # gta_bridge.ini [BRIDGE] overrides (preserve [PROFILES])
+        # Rerouted through config_registry so registry is the single writer.
         if data.get('bridge'):
-            ini = game_dir / 'gta_bridge.ini'
-            cp = configparser.ConfigParser()
-            cp.optionxform = str
-            if ini.exists():
-                try:
-                    cp.read(ini, encoding='utf-8')
-                except configparser.Error:
-                    cp = configparser.ConfigParser()
-                    cp.optionxform = str
+            from managers import config_registry
+            cp = config_registry.read('gta_bridge', str(game_dir))
             if not cp.has_section('BRIDGE'):
                 cp.add_section('BRIDGE')
             for k, v in data['bridge'].items():
@@ -199,11 +193,7 @@ class ProfileManager:
                 cp.add_section('PROFILES')
             if not cp.has_option('PROFILES', 'active_profile'):
                 cp.set('PROFILES', 'active_profile', name)
-            try:
-                with open(ini, 'w', encoding='utf-8') as f:
-                    cp.write(f)
-            except OSError:
-                pass
+            config_registry.save('gta_bridge', str(game_dir), cp)
         return True
 
     # ---- encode a sweep result as a perf profile ----

@@ -406,6 +406,10 @@ class PlayScreen(ScreenBase):
         form.addWidget(browse_dir, 3, 2)
         self.detect_lbl = body('')
         form.addWidget(self.detect_lbl, 4, 0, 1, 3)
+        self.preflight_lbl = body('')
+        self.preflight_lbl.setStyleSheet(
+            f"color:{T.COLOR_TEXT_DIM};font-size:10px;padding:0;")
+        form.addWidget(self.preflight_lbl, 5, 0, 1, 3)
         left.addLayout(form)
         left.addStretch(1)
         play_row = QHBoxLayout()
@@ -647,6 +651,7 @@ class PlayScreen(ScreenBase):
             self.detect_lbl.setStyleSheet('')
             if hasattr(self, 'path_lbl'):
                 self.path_lbl.setText('Path: %s' % d)
+            self._run_preflight()
         else:
             self.detect_lbl.setText('SAVE FAILED')
             self.detect_lbl.setStyleSheet(f'color:{T.COLOR_DANGER};')
@@ -655,6 +660,7 @@ class PlayScreen(ScreenBase):
         exe = self.exe_edit.text().strip()
         if exe and Path(exe).exists():
             self.launcher.set_selected_exe(exe)
+        self._run_preflight()
         try:
             self.launcher.launch_game()
         except Exception as e:  # noqa: BLE001
@@ -691,6 +697,30 @@ class PlayScreen(ScreenBase):
             self.overlay.set_bridge('BRIDGE: connected', True)
         else:
             self.overlay.set_bridge('BRIDGE: disconnected', False)
+
+    # ---- preflight hook (config registry sanity check) --------------------
+    def _run_preflight(self):
+        """Call config_registry.preflight and show result in preflight_lbl."""
+        try:
+            from managers import config_registry
+            game_dir = str(self.launcher.game_path)
+            ok, problems = config_registry.preflight(game_dir)
+            if ok:
+                self.preflight_lbl.setText('Config preflight: OK')
+                self.preflight_lbl.setStyleSheet(
+                    f'color:{T.COLOR_SUCCESS};font-size:10px;padding:0;')
+            else:
+                short = problems[:3]
+                text = 'Config: ' + '; '.join(short)
+                if len(problems) > 3:
+                    text += f' (+{len(problems)-3} more)'
+                self.preflight_lbl.setText(text)
+                self.preflight_lbl.setStyleSheet(
+                    f'color:#ff5533;font-size:10px;padding:0;')
+        except Exception as e:
+            self.preflight_lbl.setText(f'Preflight error: {e}')
+            self.preflight_lbl.setStyleSheet(
+                f'color:{T.COLOR_SUNSET_ORANGE};font-size:10px;padding:0;')
 
 
 # =============================================================================
@@ -751,6 +781,8 @@ class LimitsScreen(ScreenBase):
         # GTA V settings layout: category list left, setting rows right
         mid = QHBoxLayout()
         mid.setSpacing(10)
+        left_col = QVBoxLayout()
+        left_col.setSpacing(6)
         self.cat_list = QListWidget()
         self.cat_list.setFixedWidth(230)
         self.cat_list.setStyleSheet(
@@ -760,6 +792,31 @@ class LimitsScreen(ScreenBase):
             f"QListWidget::item:selected{{background:{T.COLOR_SELECT_BLUE};"
             f"color:{T.COLOR_TEXT_BODY};}}"
             f"QListWidget::item:hover{{background:{T.COLOR_PANEL_BG_LIGHT};}}")
+        left_col.addWidget(self.cat_list, 1)
+        # RESET TO DEFAULTS row (two-step inline confirmation)
+        reset_row = QHBoxLayout()
+        reset_row.setContentsMargins(0, 0, 0, 0)
+        self.reset_btn = QPushButton('RESET TO DEFAULTS')
+        self.reset_btn.setCursor(Qt.PointingHandCursor)
+        self.reset_btn.setStyleSheet(
+            f"QPushButton{{background:{T.COLOR_PANEL_BG_LIGHT};"
+            f"color:{T.COLOR_TEXT_DIM};"
+            f"border:1px solid {T.COLOR_BORDER};border-radius:6px;"
+            f"padding:6px 10px;font-size:11px;}}"
+            f"QPushButton:hover{{border-color:{T.COLOR_SUNSET_ORANGE};"
+            f"color:{T.COLOR_SUNSET_ORANGE};}}")
+        self.reset_btn.clicked.connect(self._reset_defaults)
+        reset_row.addWidget(self.reset_btn)
+        self.reset_lbl = QLabel('')
+        self.reset_lbl.setStyleSheet(
+            f"color:{T.COLOR_TEXT_DIM};font-size:10px;padding:2px 4px;")
+        reset_row.addWidget(self.reset_lbl, 1)
+        left_col.addLayout(reset_row)
+        self._reset_armed = False
+        self._reset_timer = QTimer()
+        self._reset_timer.setSingleShot(True)
+        self._reset_timer.timeout.connect(self._reset_disarm)
+        mid.addLayout(left_col)
         self.rows_scroll = QScrollArea()
         self.rows_scroll.setWidgetResizable(True)
         self.rows_scroll.setStyleSheet(
@@ -775,7 +832,6 @@ class LimitsScreen(ScreenBase):
         self.rows_lay.setSpacing(2)
         self.rows_lay.addStretch(1)
         self.rows_scroll.setWidget(self.rows_inner)
-        mid.addWidget(self.cat_list)
         mid.addWidget(self.rows_scroll, 1)
         self.root.addLayout(mid, 1)
 
@@ -1010,6 +1066,74 @@ class LimitsScreen(ScreenBase):
                             self.launcher.db_manager.set_limit('gtasa', name, str(saved), None)
         p = self.launcher.write_bridge_ini()
         self.status_lbl.setText(f'Saved. INI: {p}')
+
+    # ---- RESET TO DEFAULTS (two-step inline confirm) -----------------------
+    def _reset_defaults(self):
+        if not self._reset_armed:
+            self._reset_armed = True
+            self.reset_btn.setText('CLICK AGAIN TO CONFIRM')
+            self.reset_lbl.setText('')
+            self._reset_timer.start(5000)
+            return
+        self._reset_timer.stop()
+        self._reset_armed = False
+        self.reset_btn.setText('RESET TO DEFAULTS')
+        # perform reset for every registry key
+        from managers import config_registry
+        game_dir = str(self.launcher.game_path)
+        ok_count = 0
+        fail_list = []
+        for key in config_registry.FILES:
+            if config_registry.reset_to_defaults(key, game_dir):
+                ok_count += 1
+            else:
+                fail_list.append(key)
+        # re-read screen values from re-loaded files
+        self._refresh_from_files()
+        if fail_list:
+            self.reset_lbl.setText(
+                f'RESET OK ({ok_count} files), FAILED: {", ".join(fail_list)}')
+            self.reset_lbl.setStyleSheet(
+                f'color:{T.COLOR_SUNSET_ORANGE};font-size:10px;')
+        else:
+            self.reset_lbl.setText(f'RESET OK ({ok_count} files)')
+            self.reset_lbl.setStyleSheet(
+                f'color:{T.COLOR_SUCCESS};font-size:10px;')
+
+    def _reset_disarm(self):
+        self._reset_armed = False
+        self.reset_btn.setText('RESET TO DEFAULTS')
+
+    def _refresh_from_files(self):
+        """Re-read current values from game files into the UI widgets."""
+        from managers import config_registry
+        game_dir = str(self.launcher.game_path)
+        # re-read render distance from gta_bridge.ini
+        cp = config_registry.read('gta_bridge', game_dir)
+        if cp.has_section('BRIDGE'):
+            try:
+                lod = float(cp.get('BRIDGE', 'max_lod_scale'))
+                self.rd_slider.setValue(int(min(6.0, max(1.0, lod)) * 10))
+            except (TypeError, ValueError):
+                pass
+        # re-read limit adjuster values from db (they were written by reset)
+        for cat, catdef in LAS.LIMIT_CATEGORIES.items():
+            for ent in catdef.get('settings', []):
+                name = ent['name']
+                w = self.vars.get(name)
+                if w is None:
+                    continue
+                saved = self.launcher.db_manager.get_limit('gtasa', name)
+                if saved is None:
+                    continue
+                if isinstance(w, QSpinBox):
+                    try:
+                        w.setValue(int(float(saved)))
+                    except (TypeError, ValueError):
+                        pass
+                elif isinstance(w, QLineEdit):
+                    w.setText(str(saved))
+        self.status_lbl.setText('Values refreshed from reset files.')
 
 
 # =============================================================================
