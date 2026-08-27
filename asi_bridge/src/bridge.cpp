@@ -335,8 +335,12 @@ static void LoadOverlayState(){
     if(s_ovMode<0||s_ovMode>2) s_ovMode=0;
 }
 static int PoolUsageByName(const char* sub,int& u,int& m){
+    std::string want=sub; for(auto&c:want)c=(char)tolower(c);
     for(auto&kv:g_usage){ std::string k=kv.first; for(auto&c:k)c=(char)tolower(c);
-        if(k.find(sub)!=std::string::npos && kv.second(u,m)) return 1; } return 0;
+        if(k==want && kv.second(u,m)) return 1; }                       // exact first (Models, not ColModel)
+    for(auto&kv:g_usage){ std::string k=kv.first; for(auto&c:k)c=(char)tolower(c);
+        if(k.find(want)!=std::string::npos && kv.second(u,m)) return 1; }
+    return 0;
 }
 static void StatHudFrame(){
     DWORD now=GetTickCount();
@@ -363,33 +367,34 @@ static void StatHudFrame(){
                        uu,tu>=0?tu:-1,mu>=0?mu:-1); fclose(f);}
     }
 }
-static void StatsText(const char* t,float x,float y,float sc,const StatCol&c){
-    StatCol tmp=c; g_colourOv=&tmp;
-    DrawTextInternal(t,x,y,sc,sc);
+static void StatsText(const char* t,float x,float y,float sc,const StatCol* c){
+    StatCol tmp={0,0,0,0};
+    if(c){ tmp=*c; g_colourOv=&tmp; }
+    DrawTextInternal(t,x,y,sc,sc);                  // c==nullptr -> interface blue like F5
     g_colourOv=nullptr;
 }
-static void DrawSparkline(char* out){                     // 120-char ascii sparkline
-    static const char* LV=" _.-oO#";                      // faster=space/underscore slower=# 
-    for(int i=0;i<120;++i){
-        uint32_t ms=s_ftHist[(s_ftIdx+i)%120];
+static void DrawSparkline(char* out){                     // 60-char compact ascii sparkline
+    static const char* LV=" _.-oO#";
+    for(int i=0;i<60;++i){
+        uint32_t ms=s_ftHist[(s_ftIdx+(i*2))%120];
         int l = (ms==0)?0 : ms<20?2 : ms<34?4 : ms<50?5 : 6;
         out[i]=LV[l];
-    } out[120]='\0';
+    } out[60]='\0';
 }
 static void DrawStatsBlock(bool full){
-    float sx=10.f,y=14.f; const float lh=13.5f, sc=0.44f;
+    float sx=10.f,y=105.f; const float lh=13.5f, sc=0.44f;   // same anchor line as F5 diag
     double avfps=1000.0/s_avgMs;
     const StatCol& fc = avfps>50?COL_GREEN:(avfps>30?COL_YELL:COL_RED);
     char b[192];
-    StatsText("GTA BRIDGE - ENGINE STATS  [F7 FULL/MIN/OFF]",sx,y,sc,COL_WHITE); y+=lh*1.2f;
+    StatsText("GTA BRIDGE STATS [F7 FULL/MIN/OFF]",sx,y,sc,nullptr); y+=lh;
     sprintf(b,"FPS %5.1f  (%4.1f ms)",avfps,s_avgMs);
-    StatsText(b,sx,y,sc*1.35f,fc); y+=lh*2.0f;
-    if(s_minFps<=s_maxFps) { sprintf(b,"MIN %5.1f   AVG %5.1f   MAX %5.1f",s_minFps,avfps,s_maxFps); StatsText(b,sx,y,sc,COL_WHITE); y+=lh; }
+    StatsText(b,sx,y,sc*1.2f,&fc); y+=lh*1.6f;
+    if(s_minFps<=s_maxFps) { sprintf(b,"MIN %5.1f   AVG %5.1f   MAX %5.1f",s_minFps,avfps,s_maxFps); StatsText(b,sx,y,sc,nullptr); y+=lh; }
     if(full){
-        char sp[122]; DrawSparkline(sp); StatsText(sp,sx,y,sc,COL_GREEN); y+=lh;
-        int au,u; if(GetMemUsage(au,u)){ sprintf(b,"STREAMING %d MB used / %d avail",u,au); StatsText(b,sx,y,sc,COL_WHITE); y+=lh; }
-        int tu,tm; if(PoolUsageByName("textur",tu,tm)){ sprintf(b,"TEXTURES  %d / %d",tu,tm); StatsText(b,sx,y,sc,COL_WHITE); y+=lh; }
-        int mu,mm; if(PoolUsageByName("model",mu,mm)){ sprintf(b,"MODELS    %d / %d",mu,mm); StatsText(b,sx,y,sc,COL_WHITE); y+=lh; }
+        char sp[62]; DrawSparkline(sp); StatsText(sp,sx,y,sc*0.82f,&COL_GREEN); y+=lh;
+        int au,u; if(GetMemUsage(au,u)){ sprintf(b,"STREAMING %d MB used / %d avail",u,au); StatsText(b,sx,y,sc,nullptr); y+=lh; }
+        int tu,tm; if(PoolUsageByName("textures",tu,tm)){ sprintf(b,"TEXTURES  %d / %d",tu,tm); StatsText(b,sx,y,sc,nullptr); y+=lh; }
+        int mu,mm; if(PoolUsageByName("models",mu,mm)){ sprintf(b,"MODELS    %d / %d",mu,mm); StatsText(b,sx,y,sc,nullptr); y+=lh; }
     }
 }
 
