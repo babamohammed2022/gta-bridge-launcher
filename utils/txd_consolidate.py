@@ -464,22 +464,37 @@ def _apply(packs, common, unique, conflicts, savings_per_pack, conflicts_per_pac
             child_name = Path(rel).stem.lower()
             ide_entries.append((child_name, "veg_shared"))
 
-    # 3. Write bridge_veg_txdp.ide
+    # 3. Write registration files (pack-local, per ML docs)
+    # 3a. data/maps/bridge_veg_txdp.ide — the txdp entries (deduplicated)
     ide_lines = ["txdp"]
-    for child, parent in sorted(ide_entries):
+    for child, parent in sorted(set(ide_entries)):
         ide_lines.append(f"{child}, {parent}")
     ide_lines.append("end")
     ide_content = "\n".join(ide_lines) + "\n"
 
-    ide_path_mv = GAME_MODLOADER / "mobile_vegetation" / "bridge_veg_txdp.ide"
+    ide_rel = "data/maps/bridge_veg_txdp.ide"
+    ide_path_mv = GAME_MODLOADER / "mobile_vegetation" / ide_rel
+    ide_path_mv.parent.mkdir(parents=True, exist_ok=True)
     ide_path_mv.write_text(ide_content)
     print(f"  Wrote {ide_path_mv} ({len(ide_entries)} entries)")
 
-    # Mirror to DLC
-    ide_path_dlc = DLC_ROOT / "mobile_vegetation" / "bridge_veg_txdp.ide"
-    ide_path_dlc.parent.mkdir(parents=True, exist_ok=True)
-    ide_path_dlc.write_text(ide_content)
-    print(f"  Mirrored to {ide_path_dlc}")
+    # 3b. gta.dat — pack-local merge file registering the IDE
+    gta_lines = [
+        "# GTA Bridge: register veg txdp parent chain",
+        "IDE data/maps/bridge_veg_txdp.ide",
+    ]
+    gta_content = "\n".join(gta_lines) + "\n"
+    gta_path_mv = GAME_MODLOADER / "mobile_vegetation" / "gta.dat"
+    gta_path_mv.write_text(gta_content)
+    print(f"  Wrote {gta_path_mv} (2 lines)")
+
+    # Mirror registration files to DLC
+    for rel in ["gta.dat", "data/maps/bridge_veg_txdp.ide"]:
+        src = GAME_MODLOADER / "mobile_vegetation" / rel
+        dst = DLC_ROOT / "mobile_vegetation" / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(src), str(dst))
+        print(f"  Mirrored to {dst}")
 
     # Summary
     print()
@@ -487,12 +502,13 @@ def _apply(packs, common, unique, conflicts, savings_per_pack, conflicts_per_pac
     print(f"  veg_shared.txd: {len(shared.textures)} textures")
     print(f"  TXDs stripped:  {len(ide_entries)}")
     print(f"  Empty-risk handled: {len(empty_risk_handled)}")
+    print(f"  Registration files: gta.dat, data/maps/bridge_veg_txdp.ide")
     print(f"  Backups: {backup_dir}")
     print()
-    print("NOTE: bridge_veg_txdp.ide is written to modloader/mobile_vegetation/")
-    print("  and its DLC twin.  Mod Loader registers new IDEs in modloader data")
-    print("  dirs automatically — but this assumption must be verified on first")
-    print("  boot.  gta.dat was NOT edited.")
+    print("NOTE: gta.dat registers bridge_veg_txdp.ide via Mod Loader's")
+    print("  pack-local merge mechanism.  veg_shared.txd at pack root is")
+    print("  injected as virtual gta3.img entry (case-insensitive match).")
+    print("  Verify on first boot that all child TXDs resolve their parent.")
 
 
 # ── main ───────────────────────────────────────────────────────────────────
@@ -557,8 +573,8 @@ def main():
         print("  1. Create veg_shared.txd in mobile_vegetation/ + DLC twin")
         print("  2. Strip COMMON textures from child TXDs (backup first)")
         print("  3. Handle empty-TXD edge (keep 1 smallest texture)")
-        print("  4. Write bridge_veg_txdp.ide in mobile_vegetation/ + DLC twin")
-        print("  5. Do NOT edit gta.dat (Mod Loader registers IDEs automatically)")
+        print("  4. Write gta.dat + data/maps/bridge_veg_txdp.ide in mobile_vegetation/ + DLC twins")
+        print("  5. gta.dat registers the IDE via ML pack-local merge mechanism")
         print()
 
     # ── FINAL REPORT (<=14 lines) ──────────────────────────────────────────
@@ -592,15 +608,16 @@ def main():
     print(f"  Biggest packs: {', '.join(biggest)}")
     print(f"  Conflicts (same name, diff hash, kept in place): "
           f"{len(conflicts)} names")
-    print(f"  File created: bridge_veg_txdp.ide ({len(touched_txds)} entries)")
+    print(f"  File created: data/maps/bridge_veg_txdp.ide ({len(touched_txds)} entries)")
     print(f"  --apply will: backup each modified TXD; write veg_shared.txd; "
           f"strip children;")
     print(f"                handle empty-TXD edge (keep 1 smallest tex); "
           f"mirror to DLC twin;")
-    print(f"                write bridge_veg_txdp.ide; NO gta.dat edit")
+    print(f"                write gta.dat + data/maps/bridge_veg_txdp.ide "
+          f"(ML pack-local merge)")
     print(f"  Risks: parent-chain depth=1 (SA native, OK per txdcut.ide); "
           f"empty-TXD edge handled;")
-    print(f"         Mod Loader IDE auto-registration unverified "
+    print(f"         gta.dat merge + IDE registration unverified "
           f"(verify on first boot)")
     print(f"  Verdict: {total_saved_mb:.2f} MB savings — "
           f"{'WORTHWHILE' if total_saved_mb > 1 else 'MINOR'} "
