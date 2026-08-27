@@ -283,6 +283,7 @@ static const uint32_t limits_per_page = 18;
 static float currposx, currposy;
 static bool BeginDraw(){ currposx=10.0f; currposy=105.0f; return true; }
 static void EndDraw(){ static void (*RenderFontBuffer)() = injector::lazy_pointer<0x719840>::get(); RenderFontBuffer(); }
+static void* g_colourOv = nullptr;               // transient CRGBA* override consumed by DrawTextInternal
 static void DrawTextInternal(const char* text, float x, float y, float sx, float sy){
     struct CRGBA{ unsigned char r,g,b,a; CRGBA(unsigned char R,unsigned char G,unsigned char B,unsigned char A):r(R),g(G),b(B),a(A){} CRGBA(){} };
     static void* pInterfaceColour = injector::lazy_pointer<0xBAB22C>::get();
@@ -302,6 +303,7 @@ static void DrawTextInternal(const char* text, float x, float y, float sx, float
     static void (*PrintString)(float,float,const char*) = injector::lazy_pointer<0x71A700>::get();
     CRGBA rgba(0x1B,0x59,0x82,0xFF);
     if(pGetInterfaceColour && pInterfaceColour) ((CRGBA*(__thiscall*)(void*,CRGBA*,unsigned char))pGetInterfaceColour)(pInterfaceColour,&rgba,4);
+    if(g_colourOv) rgba=*(CRGBA*)g_colourOv;
     float screenx = (float)((signed int)*(pRsGlobal+1))/640.0f;
     float screeny = (float)((signed int)*(pRsGlobal+2))/448.0f;
     SetFontStyle(1); SetJustify(0); SetBackground(0,0); SetProportional(true); SetOrientation(1); SetRightJustifyWrap(0); SetWrapx(640.0f*screenx); SetEdge(1); SetDropColor(CRGBA(0,0,0,0xFF)); SetColor(&rgba); SetScale(screenx*sx, screeny*sy);
@@ -309,6 +311,88 @@ static void DrawTextInternal(const char* text, float x, float y, float sx, float
 }
 static void DrawText(const char* t){ const float x=currposx,y=currposy; const float sx=0.60f*0.65f,sy=0.89f*0.65f; currposy+=sy*20; DrawTextInternal(t,x,y,sx,sy); }
 static void DrawLine(const char* n,const char* v){ char b[1024]; sprintf(b,"%s: %s",n,v); DrawText(b); }
+
+// ===== Engine stat HUD (F7 cycle FULL/MIN/OFF) - renders through native font path =====
+struct StatCol{unsigned char r,g,b,a;};
+static StatCol COL_WHITE={0xFF,0xFF,0xFF,0xFF}, COL_GREEN={0x66,0xCC,0x66,0xFF},
+              COL_YELL={0xE6,0xC8,0x4A,0xFF},  COL_RED ={0xE6,0x5C,0x4A,0xFF};
+
+static int      s_ovMode   = 0;                  // 0 OFF 1 FULL 2 MIN (persisted [OVERLAY] state)
+static bool     s_f7Prev   = false;
+static double   s_avgMs    = 16.6;
+static float    s_minFps   = 1e9f, s_maxFps = 0.f;
+static uint32_t s_frameCount = 0, s_lastTick = 0, s_lastCsv = 0, s_lastFrameMs = 16;
+static uint32_t s_ftHist[120];                   // last frametimes (ms)
+static int      s_ftIdx = 0;
+
+static std::string OvIniPath(){ return GetGameDir()+"\\gta_bridge.ini"; }
+static void SaveOverlayMode(){
+    char v[4]; sprintf(v,"%d",s_ovMode);
+    WritePrivateProfileStringA("OVERLAY","state",v,OvIniPath().c_str());
+}
+static void LoadOverlayState(){
+    s_ovMode = GetPrivateProfileIntA("OVERLAY","state",0,OvIniPath().c_str());
+    if(s_ovMode<0||s_ovMode>2) s_ovMode=0;
+}
+static int PoolUsageByName(const char* sub,int& u,int& m){
+    for(auto&kv:g_usage){ std::string k=kv.first; for(auto&c:k)c=(char)tolower(c);
+        if(k.find(sub)!=std::string::npos && kv.second(u,m)) return 1; } return 0;
+}
+static void StatHudFrame(){
+    DWORD now=GetTickCount();
+    if(s_lastTick==0){ s_lastTick=now; s_lastCsv=now; return; }
+    uint32_t dt=now-s_lastTick; if(dt==0)return; s_lastTick=now; ++s_frameCount;
+    s_lastFrameMs=dt;
+    double fps=1000.0/dt; if(fps>s_maxFps)s_maxFps=(float)fps; if(fps<s_minFps)s_minFps=(float)fps;
+    s_avgMs+=((double)dt-s_avgMs)*0.05;             // smoothed frame ms
+    s_ftHist[s_ftIdx]=dt; s_ftIdx=(s_ftIdx+1)%120;
+    // F7 edge detect -> cycle mode + persist + session min/max reset
+    bool f7now=(GetKeyState(VK_F7)&0x8000)!=0;
+    if(f7now&&!s_f7Prev){ s_ovMode=(s_ovMode+1)%3; SaveOverlayMode(); s_minFps=1e9f;s_maxFps=0.f; }
+    s_f7Prev=f7now;
+    // CSV autolog when sweep candidate active ([BRIDGE] SWEEP_LOG=1)
+    if(s_ovMode&&GetPrivateProfileIntA("BRIDGE","SWEEP_LOG",0,OvIniPath().c_str())&&(now-s_lastCsv)>=1000){
+        s_lastCsv=now;
+        int au=-1,uu=-1; bool sm=GetMemUsage(au,uu);
+        int tu=-1,tm=-1,mu=-1,mm=-1;
+        PoolUsageByName("textur",tu,tm); PoolUsageByName("model",mu,mm);
+        FILE*f=nullptr; fopen_s(&f,(GetGameDir()+"\\gta_bridge_stats.csv").c_str(),"a");
+        if(f){ if(ftell(f)==0) fputs("ts,fps,min,avg,max,max_ms,streaming_used,textures_used,models_used\n",f);
+               fprintf(f,"%lu,%.1f,%.1f,%.1f,%.1f,%lu,%d,%d,%d\n",(unsigned long)now,
+                       fps,s_minFps,(float)(1000.0/s_avgMs),s_maxFps,(unsigned long)s_lastFrameMs,
+                       uu,tu>=0?tu:-1,mu>=0?mu:-1); fclose(f);}
+    }
+}
+static void StatsText(const char* t,float x,float y,float sc,const StatCol&c){
+    StatCol tmp=c; g_colourOv=&tmp;
+    DrawTextInternal(t,x,y,sc,sc);
+    g_colourOv=nullptr;
+}
+static void DrawSparkline(char* out){                     // 120-char ascii sparkline
+    static const char* LV=" _.-oO#";                      // faster=space/underscore slower=# 
+    for(int i=0;i<120;++i){
+        uint32_t ms=s_ftHist[(s_ftIdx+i)%120];
+        int l = (ms==0)?0 : ms<20?2 : ms<34?4 : ms<50?5 : 6;
+        out[i]=LV[l];
+    } out[120]='\0';
+}
+static void DrawStatsBlock(bool full){
+    float sx=10.f,y=14.f; const float lh=13.5f, sc=0.44f;
+    double avfps=1000.0/s_avgMs;
+    const StatCol& fc = avfps>50?COL_GREEN:(avfps>30?COL_YELL:COL_RED);
+    char b[192];
+    StatsText("GTA BRIDGE - ENGINE STATS  [F7 FULL/MIN/OFF]",sx,y,sc,COL_WHITE); y+=lh*1.2f;
+    sprintf(b,"FPS %5.1f  (%4.1f ms)",avfps,s_avgMs);
+    StatsText(b,sx,y,sc*1.35f,fc); y+=lh*2.0f;
+    if(s_minFps<=s_maxFps) { sprintf(b,"MIN %5.1f   AVG %5.1f   MAX %5.1f",s_minFps,avfps,s_maxFps); StatsText(b,sx,y,sc,COL_WHITE); y+=lh; }
+    if(full){
+        char sp[122]; DrawSparkline(sp); StatsText(sp,sx,y,sc,COL_GREEN); y+=lh;
+        int au,u; if(GetMemUsage(au,u)){ sprintf(b,"STREAMING %d MB used / %d avail",u,au); StatsText(b,sx,y,sc,COL_WHITE); y+=lh; }
+        int tu,tm; if(PoolUsageByName("textur",tu,tm)){ sprintf(b,"TEXTURES  %d / %d",tu,tm); StatsText(b,sx,y,sc,COL_WHITE); y+=lh; }
+        int mu,mm; if(PoolUsageByName("model",mu,mm)){ sprintf(b,"MODELS    %d / %d",mu,mm); StatsText(b,sx,y,sc,COL_WHITE); y+=lh; }
+    }
+}
+
 static bool TestShouldDraw(){
     static bool should=false, prev=false, curr=false;
     curr=(GetKeyState(vkBridgeText)&0x8000)!=0;
@@ -321,7 +405,12 @@ static void DrawBridgeOverlay(){
     DynamicRenderScale();
     // streaming supervisor: pressure-driven eviction + priority fast-load drain
     StreamingSupervisor();
-    if(!TestShouldDraw() || !BeginDraw()) return;
+    StatHudFrame();
+    bool wantDiag = TestShouldDraw();
+    if(!wantDiag && s_ovMode==0) return;
+    if(!BeginDraw()) return;
+    if(s_ovMode) DrawStatsBlock(s_ovMode==1);
+    if(wantDiag){
     // header
     DrawText("GTA BRIDGE — diag (F5 page)");
     // system mem vs streaming mem
@@ -333,9 +422,10 @@ static void DrawBridgeOverlay(){
     // pools paged
     unsigned i=0,drawn=0;
     for(auto &kv: g_usage){ if(i>=current_limit && (i<current_limit+limits_per_page || drawn<limits_per_page)){ int used=-1,maxv=-1; if(kv.second(used,maxv)){ char ub[64]; sprintf(ub,"%d / %d",used,maxv); DrawLine(kv.first.c_str(),ub); ++drawn; } } ++i; }
+    }
     EndDraw();
 }
-static void PatchDrawer(){ DrawHUD.fun = injector::MakeCALL(0x53E4FF, DrawBridgeOverlay).get(); }
+static void PatchDrawer(){ LoadOverlayState(); DrawHUD.fun = injector::MakeCALL(0x53E4FF, DrawBridgeOverlay).get(); }
 
 static DWORD WINAPI PipeServerThread(LPVOID) {
     while(!g_shutdown) {
