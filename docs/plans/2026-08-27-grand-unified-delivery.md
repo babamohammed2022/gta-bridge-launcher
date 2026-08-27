@@ -26,7 +26,8 @@ Commits: a57b73e baseline / 7e5dde8 A+C+D / c09df54 B+E.
 - [x] friend_zip v4-final: EXCLUDE .*\.cs$ (+cleo_saves/*.sav legacy); collect_binaries(exe+txdfix.dll+launcher_data manifests+presets+profiles) exit2 loud-miss + STALE guard vs app.py/launcher.py mtimes; README single-artifact install; checklist Distributable canonical
 
 ## USER TEST GAUNTLET
-- [ ] **T1** F8 save toast/no-crash + FPS baseline city/country/interior (overlay HUD) + rerun Parallax OFF (>15% delta => Parallax quality tier)
+- [ ] **T1** FPS baseline city/country/interior (overlay HUD) + rerun Parallax OFF (>15% delta => Parallax quality tier)
+  - [x] ~~F8 save test~~ SKIPPED per user 2026-08-27 ("nnothign happens when i press f8 skip that feature"). Deferred revisit: verify cleo/ gta_bridge_save.cs actually deployed+enabled (not .disabled), check cleo.log. Not a shipping blocker — friend zip contains no custom scripts by design.
 - [ ] **T2** <=2 sweep drives (harness applies c1..c4; paste 9 numbers per candidate) -> encode_perf_profile winner -> play-screen perf profile real
 - [ ] **T3** frozen-exe smoke pass (checklist 13 lines incl crash-log rename test)
 - [ ] **T4** extract dist friend zip onto CLEAN SA 1.0 -> launch once -> ship to friend
