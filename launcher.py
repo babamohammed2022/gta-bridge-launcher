@@ -6,6 +6,7 @@ Hybrid Python/C++ launcher for GTA games with database-driven content
 
 import os
 import sys
+import shutil
 import json
 import sqlite3
 import configparser
@@ -1516,9 +1517,19 @@ def main():
     default_game_path = str(exe_dir) if colocated_game.exists() else r'E:/games/gtasa_skygfx_plus'
     game_path = os.environ.get('GTA_PATH', default_game_path)
     # db/config: when frozen & co-located, keep them beside the exe for portability
-    if getattr(sys, 'frozen', False) and colocated_game.exists():
+    if getattr(sys, 'frozen', False):
+        # onedir deploy: exe sits in GTA_Bridge_Launcher/ subfolder (gta_sa.exe is one level up),
+        # so colocated_game check is misleading — always keep db/config beside the exe
         default_db = str(exe_dir / 'gta_limits.db')
         default_cfg = str(exe_dir / 'config')
+        # first-run bootstrap: copy bundled defaults out of _MEIPASS to writable exe-dir
+        try:
+            if not (Path(default_cfg) / 'settings.json').exists():
+                _mcfg = Path(getattr(sys, '_MEIPASS', '')) / 'config'
+                if (_mcfg / 'settings.json').exists():
+                    shutil.copytree(_mcfg, default_cfg, dirs_exist_ok=True)
+        except Exception:
+            pass
     else:
         default_db = 'gta_limits.db'
         default_cfg = 'config'

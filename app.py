@@ -591,6 +591,17 @@ class PlayScreen(ScreenBase):
         return None
 
     def _build_quick_mods(self):
+        try:
+            self._build_quick_mods_impl()
+        except Exception:
+            import traceback, logging
+            logging.getLogger('bridge').error('DLC panel build failed:\n'+traceback.format_exc())
+            try:
+                self.qm_box.setTitle('DLC  [panel error - see log]')
+            except Exception:
+                pass
+
+    def _build_quick_mods_impl(self):
         while self.qm_layout.count():
             it = self.qm_layout.takeAt(0)
             w = it.widget()
@@ -3119,6 +3130,15 @@ def _main_inner():
     else:
         game_path = 'E:/games/gtasa_skygfx_plus'
     db_path = str(F('gta_limits.db'))
+    # frozen first-run: provision writable config beside the exe from bundled defaults
+    try:
+        if not (F('config') / 'settings.json').exists():
+            import shutil as _shutil
+            _mcfg = Path(getattr(sys, '_MEIPASS', '')) / 'config'
+            if (_mcfg / 'settings.json').exists():
+                _shutil.copytree(_mcfg, F('config'), dirs_exist_ok=True)
+    except Exception:
+        pass
     launcher = GTALauncher(game_path=game_path, db_path=db_path,
                            config_path=str(F('config')))
     app = QApplication(sys.argv)
