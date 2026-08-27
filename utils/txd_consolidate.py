@@ -517,8 +517,15 @@ def main():
         description="SA-native TXD PARENTING consolidation for vegetation")
     parser.add_argument("--apply", action="store_true",
                         help="Execute consolidation (NOT this run)")
+    parser.add_argument("--force-experimental", action="store_true",
+                        help="Bypass CTD hold (requires dev-copy harness, NOT daily driver)")
     args = parser.parse_args()
 
+    if args.apply and not args.force_experimental:
+        print("[HOLD] EXPERIMENTAL: 2 CTDs on daily driver 2026-08-27 (null tex-dict deref at boot).")
+        print("       Needs dev-copy harness (launcher game picker -> dev dir) + CTD symbolization.")
+        print("       Override ONLY with: --apply --force-experimental")
+        return 2
     if args.apply:
         print("[APPLY] TXD Consolidation")
         print("  WARNING: This modifies game files.  Dry-run only this run.")
