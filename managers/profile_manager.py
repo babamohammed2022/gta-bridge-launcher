@@ -226,7 +226,7 @@ class ProfileManager:
                 float(row.get('rank', 0.0))),
             'skygfx': {},
             'bridge': ov,
-            'notes': 'Encoded by encode_perf_profile; SkyGfx ini untouched.',
+            'notes': 'Encoded by encode_perf_profile; SkyGfx ini untouched. sweep_log:0 written into [BRIDGE] on winner encode.',
         }
         p = self.profiles_dir() / 'perf.json'
         p.write_text(json.dumps(data, indent=2), encoding='utf-8')

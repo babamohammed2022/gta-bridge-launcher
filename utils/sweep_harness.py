@@ -21,6 +21,7 @@ BASE: Dict[str, object] = {
     'streaming_mem_mb': 2048,
     'max_lod_scale': 4.0,
     'vegetation_boost': 1,
+    'sweep_log': 1,
 }
 
 CANDIDATES: List[Tuple[str, Dict[str, object]]] = [
