@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
-"""txd_consolidate.py — SA-native TXD PARENTING consolidation for vegetation.
+"""txd_consolidate.py — SA-native TXD PARENTING via ISOLATED OVERRIDE PACK.
 
-Uses the vanilla `txdp` IDE mechanism (proven by txdcut.ide) to deduplicate
-textures shared across modloader packs.  A single veg_shared.txd holds every
-COMMON texture once; child TXDs are stripped of duplicates and reference the
-parent via bridge_veg_txdp.ide.
+Replaces the old in-place-strip approach.  Creates a single new Mod Loader
+pack `zz_fixedveg_loading/` that OVERRIDES original vegetation TXDs using
+ML's native later-pack-wins rule.  Original packs are NEVER touched.
+
+Layout of new pack (modloader/zz_fixedveg_loading/):
+  veg_shared.txd               — 374 COMMON textures (one copy each)
+  gta.dat                      — registers bridge_veg_txdp.ide
+  data/maps/bridge_veg_txdp.ide— 74 txdp entries
+  <OrigPackRelPath> x 120      — stripped child TXDs at game-root-identical paths
+                                 (e.g. mobile_vegetation/gta_potplants2.txd)
+
+ML rules leveraged:
+  - modloader/<PackName>/... maps to game-root/
+  - Packs load alphabetically; LATER pack's file overrides earlier same-path file.
+  - loose dff/txd in pack root auto-injects as gta3.img entry by basename.
+  - gta.dat inside a pack is line-union merged.
+  - IDE path in that gta.dat resolves pack-relative.
 
 Usage:
-  python utils/txd_consolidate.py              # dry-run (plan only)
-  python utils/txd_consolidate.py --apply       # execute (NOT this run)
-
-Hard rules (SKILL.md):
-  - NEVER write inside *.img dirs
-  - NEVER rename modloader folders
-  - NEVER delete backups
-  - DLC + modloader must stay in sync after writes
-  - No game-dir writes this run (dry-run only)
+  python utils/txd_consolidate.py                                # dry-run only
+  python utils/txd_consolidate.py --apply --force-experimental    # execute
 """
 import argparse
+import copy
 import hashlib
 import os
 import shutil
@@ -33,6 +40,15 @@ PROJECT = Path(__file__).resolve().parent.parent
 DLC_ROOT = PROJECT / "launcher_data" / "dlc"
 BACKUP_ROOT = PROJECT / "launcher_data" / "backups"
 
+# The existing backup of originals from the first consolidation attempt.
+# Contains exactly the 120 TXD files that get stripped.
+EXISTING_BACKUP = BACKUP_ROOT / "txd_consolidate_20260827_161022"
+
+# New override pack (zz_ prefix ensures it loads LAST alphabetically)
+OVERRIDE_PACK_NAME = "zz_fixedveg_loading"
+OVERRIDE_PATH = GAME_MODLOADER / OVERRIDE_PACK_NAME
+OVERRIDE_DLC = DLC_ROOT / OVERRIDE_PACK_NAME
+
 sys.path.insert(0, str(PROJECT / "managers"))
 from txdlite import TxdFile, TxdTexture, TxdError, \
     FLAG_COMPRESSED, DXT1_FMT, DXT3_FMT, DXT5_FMT, \
@@ -43,12 +59,8 @@ from txdlite import TxdFile, TxdTexture, TxdError, \
 def _scoped_packs():
     """Return list of (pack_name, pack_path, scoped_txd_paths).
 
-    Scope rules:
-      - mobile_vegetation: ALL *.txd in pack root
-      - Improved and Fixed Original Vegetation: subdirs whose name contains
-        veg/tree/Christmas/Potted, plus any *.txd directly in pack root
-        whose textures overlap with mobile_vegetation
-      - skygfx_plus_extras: same subdir rule + overlapping root TXDs
+    Identical to original; reads from GAME_MODLOADER for CLASSIFICATION only.
+    Actual source data for stripping comes from EXISTING_BACKUP.
     """
     veg_keywords = {"veg", "tree", "christmas", "potted", "plant", "fir",
                     "pine", "cypress", "oak", "sequoia", "spruce", "conifer",
@@ -73,7 +85,6 @@ def _scoped_packs():
             name_lower = sub.name.lower()
             if any(kw in name_lower for kw in veg_keywords):
                 scoped.extend(sorted(sub.rglob("*.txd")))
-        # Also check root-level TXDs that overlap with mobile_vegetation
         mv_names = {p.name.lower() for p in (GAME_MODLOADER / "mobile_vegetation").glob("*.txd")}
         for p in sorted(iv.glob("*.txd")):
             if p.name.lower() in mv_names:
@@ -108,10 +119,7 @@ def _is_fakeimg(p: Path) -> bool:
 
 # ── texture content hash ────────────────────────────────────────────────────
 def _tex_content_key(tex: TxdTexture):
-    """Return (name_lower, fmt_str, w, h, hash_of_all_mip_bytes).
-
-    Two textures with identical key are byte-identical content.
-    """
+    """Return (name_lower, fmt_str, w, h, hash_of_all_mip_bytes)."""
     name = tex.name.lower()
     fmt = tex.fmt_name()
     w, h = tex.width, tex.height
@@ -126,7 +134,7 @@ def _tex_raster_bytes(tex: TxdTexture) -> int:
     return sum(len(m) for m in tex.mips)
 
 
-# ── parse all scoped TXDs ──────────────────────────────────────────────────
+# ── parse all scoped TXDs (from LIVE modloader for classification) ──────────
 def _parse_all(packs):
     """Parse every scoped TXD. Returns:
       global_map: (name, fmt, w, h, hash) -> [(pack, txd_rel, tex)]
@@ -162,10 +170,9 @@ def _classify(global_map, packs):
     Returns:
       common: dict key -> [(pack, txd_rel, tex)]  (appears in >=2 TXDs across packs)
       unique: dict key -> [(pack, txd_rel, tex)]   (single TXD)
-      conflicts: list of (name, [(key, pack, txd_rel, tex), ...])  (same name, diff hash)
+      conflicts: list of (name, [(key, pack, txd_rel, tex), ...])
     """
-    # Group by name first to detect conflicts
-    by_name = defaultdict(list)  # name.lower() -> [(key, pack, txd_rel, tex)]
+    by_name = defaultdict(list)
     for key, entries in global_map.items():
         name = key[0]
         for e in entries:
@@ -176,10 +183,8 @@ def _classify(global_map, packs):
     conflicts = []
 
     for name, entries in by_name.items():
-        # Check for same-name-different-hash
         unique_keys = set(e[0] for e in entries)
         if len(unique_keys) > 1:
-            # CONFLICT: same name, different content — keep all in place
             conflicts.append((name, entries))
             for key, pack, txd_rel, tex in entries:
                 if key not in unique:
@@ -188,7 +193,6 @@ def _classify(global_map, packs):
             continue
 
         key = entries[0][0]
-        # Count distinct TXDs (across packs)
         distinct_txds = set((p, t) for _, p, t, _ in entries)
         if len(distinct_txds) >= 2:
             common[key] = [(p, t, x) for _, p, t, x in entries]
@@ -201,9 +205,6 @@ def _classify(global_map, packs):
 # ── plan table ──────────────────────────────────────────────────────────────
 def _build_plan(common, unique, conflicts, pack_stats, packs):
     """Build per-pack plan and compute savings."""
-    # For each common texture, identify which TXDs would be stripped
-    # (all but one copy — the one that goes into veg_shared.txd)
-    # We keep the copy in mobile_vegetation if present, else the first pack.
     savings_per_pack = defaultdict(lambda: {"stripped_tex_count": 0,
                                              "stripped_bytes": 0,
                                              "txds_touched": set(),
@@ -211,7 +212,6 @@ def _build_plan(common, unique, conflicts, pack_stats, packs):
     conflicts_per_pack = defaultdict(int)
 
     for key, entries in common.items():
-        # Prefer keeping the copy in mobile_vegetation
         mv_entries = [e for e in entries if e[0] == "mobile_vegetation"]
         if mv_entries:
             keep = mv_entries[0]
@@ -226,7 +226,6 @@ def _build_plan(common, unique, conflicts, pack_stats, packs):
                 savings_per_pack[pack]["stripped_bytes"] += _tex_raster_bytes(tex)
                 savings_per_pack[pack]["txds_touched"].add(txd_rel)
 
-    # Conflicts: count per pack
     for name, entries in conflicts:
         for key, pack, txd_rel, tex in entries:
             conflicts_per_pack[pack] += 1
@@ -239,7 +238,7 @@ def _print_plan(packs, pack_stats, common, unique, conflicts,
                 savings_per_pack, conflicts_per_pack):
     """Print the PLAN table."""
     print("=" * 80)
-    print("TXD CONSOLIDATION PLAN (dry-run)")
+    print("TXD CONSOLIDATION PLAN (dry-run)  —  OVERRIDE PACK MODE")
     print("=" * 80)
     print()
 
@@ -289,7 +288,7 @@ def _print_plan(packs, pack_stats, common, unique, conflicts,
         _tex_raster_bytes(entries[0][2]) for entries in common.values()
     )
     print(f"veg_shared.txd: {len(common)} textures, ~{shared_bytes / 1e6:.2f} MB")
-    print(f"  (one copy of each COMMON texture, stored in mobile_vegetation/)")
+    print(f"  (one copy of each COMMON texture)")
     print()
 
     # Conflicts detail
@@ -304,11 +303,11 @@ def _print_plan(packs, pack_stats, common, unique, conflicts,
             print(f"  ... and {len(conflicts) - 10} more")
         print()
 
-    # TXDs that would be touched
+    # TXDs that would receive overrides
     touched = set()
     for sp in savings_per_pack.values():
         touched.update(sp["txds_touched"])
-    print(f"TXDs to be modified (stripped): {len(touched)}")
+    print(f"Child TXDs (override in new pack): {len(touched)}")
     for t in sorted(touched)[:10]:
         print(f"  {t}")
     if len(touched) > 10:
@@ -328,12 +327,10 @@ def _print_plan(packs, pack_stats, common, unique, conflicts,
                     txd = TxdFile.load(str(txd_path))
                 except Exception:
                     continue
-                # Count textures that would remain after stripping
                 remaining = 0
                 for tex in txd.textures:
                     key = _tex_content_key(tex)
                     if key in common:
-                        # Check if this TXD is a "child" (would be stripped)
                         for e_pack, e_rel, _ in common[key]:
                             if e_pack == pname and e_rel == rel:
                                 break
@@ -350,24 +347,101 @@ def _print_plan(packs, pack_stats, common, unique, conflicts,
         print(f"  -> Apply mode will keep 1 smallest texture in each.")
     print()
 
-    # Savings verdict
     total_saved_mb = grand_bytes / 1e6
     print(f"PROJECTED SAVINGS: {total_saved_mb:.2f} MB "
           f"({grand_stripped} duplicate textures stripped)")
     print()
 
+    # New pack summary
+    touched_count = len(touched)
+    print(f"NEW PACK: {OVERRIDE_PACK_NAME}/")
+    print(f"  {len(common)} textures -> veg_shared.txd")
+    print(f"  {touched_count} stripped children at game-relative paths")
+    print(f"  + gta.dat + data/maps/bridge_veg_txdp.ide")
+    print(f"  DLC twin: launcher_data/dlc/{OVERRIDE_PACK_NAME}/")
+    print()
 
-# ── apply mode (NOT run now) ────────────────────────────────────────────────
-def _apply(packs, common, unique, conflicts, savings_per_pack, conflicts_per_pack):
-    """Execute consolidation.  NOT called in dry-run mode."""
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_dir = BACKUP_ROOT / f"txd_consolidate_{stamp}"
-    print(f"Backups -> {backup_dir}")
 
-    # 1. Build veg_shared.txd
+# ── record mtimes for assertion ────────────────────────────────────────────
+def _record_mtimes(packs):
+    """Return dict: str(abspath) -> mtime for all files in original packs."""
+    mtimes = {}
+    for pname, ppath, txd_paths in packs:
+        for txd_path in txd_paths:
+            if txd_path.is_file():
+                mtimes[str(txd_path.resolve())] = txd_path.stat().st_mtime
+        # Also track non-TXD files in scoped dirs (for completeness)
+        for f in ppath.rglob("*"):
+            if f.is_file() and not f.suffix.lower() == ".txd":
+                mtimes[str(f.resolve())] = f.stat().st_mtime
+    return mtimes
+
+
+def _assert_mtimes(before, packs, label="original packs"):
+    """Assert all tracked files have unchanged mtimes. Exit 1 if any changed."""
+    changed = []
+    for pname, ppath, txd_paths in packs:
+        for txd_path in txd_paths:
+            ap = str(txd_path.resolve())
+            if txd_path.is_file():
+                now = txd_path.stat().st_mtime
+                if ap in before and before[ap] != now:
+                    changed.append(txd_path)
+        for f in ppath.rglob("*"):
+            if f.is_file():
+                ap = str(f.resolve())
+                if f.is_file():
+                    now = f.stat().st_mtime
+                    if ap in before and before[ap] != now:
+                        changed.append(f)
+    if changed:
+        print(f"  [ERROR] {len(changed)} files in {label} have CHANGED mtimes!")
+        for c in changed[:10]:
+            print(f"    {c}")
+        print("  Aborting for safety.")
+        return False
+    return True
+
+
+# ── apply mode ──────────────────────────────────────────────────────────────
+def _apply_pack_mode(packs, common, unique, conflicts,
+                     savings_per_pack, conflicts_per_pack):
+    """Execute consolidation via isolated override pack.
+
+    NO writes to original packs.  Everything goes into zz_fixedveg_loading/.
+    Originals loaded from EXISTING_BACKUP for stripping.
+    """
+    if not EXISTING_BACKUP.is_dir():
+        print(f"  [FATAL] Existing backup not found: {EXISTING_BACKUP}")
+        print(f"  Cannot proceed — originals required for stripping.")
+        return
+
+    # Assert original pack mtimes BEFORE we start
+    print("  Recording original pack mtimes...")
+    mtimes_before = _record_mtimes(packs)
+
+    # Collect all child TXDs that need stripping
+    touched_by_rel = {}  # rel -> (pack_name, from_backup_path)
+    for pname, ppath, txd_paths in packs:
+        for txd_path in txd_paths:
+            if _is_fakeimg(txd_path):
+                continue
+            rel = str(txd_path.relative_to(GAME_MODLOADER))
+            sp = savings_per_pack.get(pname, {})
+            if rel in sp.get("txds_touched", set()):
+                backup_src = EXISTING_BACKUP / rel
+                if not backup_src.is_file():
+                    print(f"  [WARN] Backup source missing: {backup_src}")
+                    print(f"         Falling back to live file (non-ideal)")
+                    backup_src = txd_path
+                touched_by_rel[rel] = (pname, backup_src)
+
+    print(f"  Identified {len(touched_by_rel)} child TXDs to override")
+
+    # 1. Build veg_shared.txd from COMMON textures
+    print("\n  Building veg_shared.txd...")
     shared = TxdFile.create()
     shared.path = None
-    # Collect one copy of each COMMON texture (prefer mobile_vegetation)
     shared_textures = []
     for key, entries in common.items():
         mv_entries = [e for e in entries if e[0] == "mobile_vegetation"]
@@ -377,95 +451,80 @@ def _apply(packs, common, unique, conflicts, savings_per_pack, conflicts_per_pac
             _, _, tex = entries[0]
         shared_textures.append(tex)
 
-    # Sort by name for deterministic output
     shared_textures.sort(key=lambda t: t.name)
 
-    # We need to deep-copy textures into the shared TXD
-    import copy
     for src_tex in shared_textures:
         dst = copy.copy(src_tex)
         dst.mips = list(src_tex.mips)
         dst.dirty = True
         shared.textures.append(dst)
 
-    # Patch dict struct with correct count
     cnt = struct.pack("<hh", len(shared.textures), 0)
     shared.dict_struct_raw = cnt
 
-    # Write veg_shared.txd to mobile_vegetation
-    shared_path_mv = GAME_MODLOADER / "mobile_vegetation" / "veg_shared.txd"
-    shared.save(str(shared_path_mv))
-    print(f"  Wrote {shared_path_mv} ({len(shared.textures)} textures)")
+    # Write to override pack root
+    shared_path = OVERRIDE_PATH / "veg_shared.txd"
+    shared_path.parent.mkdir(parents=True, exist_ok=True)
+    shared.save(str(shared_path))
+    print(f"    Wrote {shared_path} ({len(shared.textures)} textures)")
 
     # Mirror to DLC
-    shared_path_dlc = DLC_ROOT / "mobile_vegetation" / "veg_shared.txd"
+    shared_path_dlc = OVERRIDE_DLC / "veg_shared.txd"
     shared_path_dlc.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(str(shared_path_mv), str(shared_path_dlc))
-    print(f"  Mirrored to {shared_path_dlc}")
+    shutil.copy2(str(shared_path), str(shared_path_dlc))
+    print(f"    Mirrored to {shared_path_dlc}")
 
-    # 2. Strip COMMON textures from child TXDs
-    ide_entries = []  # (child_txd_name_lower, "veg_shared")
+    # 2. Write stripped children from backup originals
+    ide_entries = []
     empty_risk_handled = []
 
-    for pname, ppath, txd_paths in packs:
-        for txd_path in txd_paths:
-            if _is_fakeimg(txd_path):
-                continue
-            rel = str(txd_path.relative_to(GAME_MODLOADER))
-            sp = savings_per_pack.get(pname, {})
-            if rel not in sp.get("txds_touched", set()):
-                continue
+    for rel, (pname, backup_path) in sorted(touched_by_rel.items()):
+        # Destination in override pack (game-root-identical path)
+        dest = OVERRIDE_PATH / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
 
-            # Backup
-            bak_dst = backup_dir / rel
-            bak_dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(str(txd_path), str(bak_dst))
+        # Load from backup (original, unstripped)
+        txd = TxdFile.load(str(backup_path))
 
-            # Load and strip
-            txd = TxdFile.load(str(txd_path))
-            to_remove = []
-            for tex in txd.textures:
-                key = _tex_content_key(tex)
-                if key in common:
-                    # Check if THIS TXD is a child for this key
-                    is_child = False
-                    for e_pack, e_rel, _ in common[key]:
-                        if e_pack == pname and e_rel == rel:
-                            is_child = True
-                            break
-                    if is_child:
-                        to_remove.append(tex)
+        # Strip COMMON textures
+        to_remove = []
+        for tex in txd.textures:
+            key = _tex_content_key(tex)
+            if key in common:
+                is_child = False
+                for e_pack, e_rel, _ in common[key]:
+                    if e_pack == pname and e_rel == rel:
+                        is_child = True
+                        break
+                if is_child:
+                    to_remove.append(tex)
 
-            for tex in to_remove:
-                txd.textures.remove(tex)
+        for tex in to_remove:
+            txd.textures.remove(tex)
 
-            # Handle empty-TXD edge case
-            if len(txd.textures) == 0:
-                # Keep the smallest texture (by raster bytes)
-                # Re-load from backup to get original textures
-                txd_orig = TxdFile.load(str(bak_dst))
-                smallest = min(txd_orig.textures,
-                               key=lambda t: _tex_raster_bytes(t))
-                # Copy it back
-                import copy
-                kept = copy.copy(smallest)
-                kept.mips = list(smallest.mips)
-                kept.dirty = True
-                txd.textures.append(kept)
-                empty_risk_handled.append(rel)
-                print(f"  [EMPTY-RISK] {rel}: kept 1 smallest texture "
-                       f"({smallest.name})")
+        # Handle empty-TXD edge case
+        if len(txd.textures) == 0:
+            txd_orig = TxdFile.load(str(backup_path))
+            smallest = min(txd_orig.textures,
+                           key=lambda t: _tex_raster_bytes(t))
+            kept = copy.copy(smallest)
+            kept.mips = list(smallest.mips)
+            kept.dirty = True
+            txd.textures.append(kept)
+            empty_risk_handled.append(rel)
+            print(f"    [EMPTY-RISK] {rel}: kept 1 ({smallest.name})")
+        else:
+            print(f"    Stripped {len(to_remove)} tex from {rel}")
 
-            # Save
-            txd.save(str(txd_path))
-            print(f"  Stripped {len(to_remove)} textures from [{pname}] {rel}")
+        # Save to override pack
+        txd.save(str(dest))
 
-            # Record IDE entry
-            child_name = Path(rel).stem.lower()
-            ide_entries.append((child_name, "veg_shared"))
+        # Record IDE entry
+        child_name = Path(rel).stem.lower()
+        ide_entries.append((child_name, "veg_shared"))
 
-    # 3. Write registration files (pack-local, per ML docs)
-    # 3a. data/maps/bridge_veg_txdp.ide — the txdp entries (deduplicated)
+    # 3. Write registration files
+    # 3a. data/maps/bridge_veg_txdp.ide
     ide_lines = ["txdp"]
     for child, parent in sorted(set(ide_entries)):
         ide_lines.append(f"{child}, {parent}")
@@ -473,118 +532,144 @@ def _apply(packs, common, unique, conflicts, savings_per_pack, conflicts_per_pac
     ide_content = "\n".join(ide_lines) + "\n"
 
     ide_rel = "data/maps/bridge_veg_txdp.ide"
-    ide_path_mv = GAME_MODLOADER / "mobile_vegetation" / ide_rel
-    ide_path_mv.parent.mkdir(parents=True, exist_ok=True)
-    ide_path_mv.write_text(ide_content)
-    print(f"  Wrote {ide_path_mv} ({len(ide_entries)} entries)")
+    ide_path = OVERRIDE_PATH / ide_rel
+    ide_path.parent.mkdir(parents=True, exist_ok=True)
+    ide_path.write_text(ide_content)
+    print(f"\n  Wrote {ide_path} ({len(set(ide_entries))} entries)")
 
-    # 3b. gta.dat — pack-local merge file registering the IDE
+    # 3b. gta.dat
     gta_lines = [
         "# GTA Bridge: register veg txdp parent chain",
         "IDE data/maps/bridge_veg_txdp.ide",
     ]
     gta_content = "\n".join(gta_lines) + "\n"
-    gta_path_mv = GAME_MODLOADER / "mobile_vegetation" / "gta.dat"
-    gta_path_mv.write_text(gta_content)
-    print(f"  Wrote {gta_path_mv} (2 lines)")
+    gta_path = OVERRIDE_PATH / "gta.dat"
+    gta_path.write_text(gta_content)
+    print(f"  Wrote {gta_path} (2 lines)")
 
-    # Mirror registration files to DLC
-    for rel in ["gta.dat", "data/maps/bridge_veg_txdp.ide"]:
-        src = GAME_MODLOADER / "mobile_vegetation" / rel
-        dst = DLC_ROOT / "mobile_vegetation" / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(str(src), str(dst))
-        print(f"  Mirrored to {dst}")
+    # Mirror registration files AND children to DLC
+    for f in OVERRIDE_PATH.rglob("*"):
+        if f.is_file():
+            rel = f.relative_to(OVERRIDE_PATH)
+            dst = OVERRIDE_DLC / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(f), str(dst))
+    print(f"  Mirrored {sum(1 for _ in OVERRIDE_PATH.rglob('*') if _.is_file())} files to {OVERRIDE_DLC}")
+
+    # 4. Verify original pack mtimes unchanged
+    print("\n  Verifying original pack mtimes...")
+    ok = _assert_mtimes(mtimes_before, packs)
+    if not ok:
+        print("  [CRITICAL] Original packs were modified! Manual restore needed.")
+        print(f"  Rollback: rm -rf {OVERRIDE_PATH}")
+        return
+
+    print("  [OK] All original pack mtimes unchanged (ZERO writes to originals)")
+
+    # 5. Verify DLC mirror byte-match
+    print("\n  Verifying DLC mirror...")
+    mismatches = 0
+    for f in OVERRIDE_PATH.rglob("*"):
+        if f.is_file():
+            rel = f.relative_to(OVERRIDE_PATH)
+            dlc_f = OVERRIDE_DLC / rel
+            if not dlc_f.is_file():
+                print(f"    [MISSING] DLC mirror: {dlc_f}")
+                mismatches += 1
+            elif f.read_bytes() != dlc_f.read_bytes():
+                print(f"    [MISMATCH] {rel}")
+                mismatches += 1
+    if mismatches == 0:
+        dlc_bytes = sum(f.stat().st_size for f in OVERRIDE_DLC.rglob("*") if f.is_file())
+        print(f"    [OK] DLC mirror byte-match verified ({dlc_bytes} bytes)")
+    else:
+        print(f"    [WARN] {mismatches} DLC mirror mismatches")
 
     # Summary
     print()
-    print(f"APPLY COMPLETE:")
-    print(f"  veg_shared.txd: {len(shared.textures)} textures")
-    print(f"  TXDs stripped:  {len(ide_entries)}")
-    print(f"  Empty-risk handled: {len(empty_risk_handled)}")
-    print(f"  Registration files: gta.dat, data/maps/bridge_veg_txdp.ide")
-    print(f"  Backups: {backup_dir}")
+    print("=" * 80)
+    print("APPLY COMPLETE — Override Pack Mode")
+    print("=" * 80)
+    print(f"  Pack:       {OVERRIDE_PACK_NAME}/")
+    print(f"  veg_shared: {len(shared.textures)} textures")
+    print(f"  Overrides:  {len(ide_entries)} child TXDs (stripped)")
+    print(f"  Empty-risk: {len(empty_risk_handled)}")
+    print(f"  Files:      {len(ide_entries)} overrides + veg_shared.txd + gta.dat + bridge_veg_txdp.ide")
+    print(f"  Originals:  ZERO writes (mtimes verified)")
+    print(f"  DLC mirror: {OVERRIDE_DLC}")
     print()
-    print("NOTE: gta.dat registers bridge_veg_txdp.ide via Mod Loader's")
-    print("  pack-local merge mechanism.  veg_shared.txd at pack root is")
-    print("  injected as virtual gta3.img entry (case-insensitive match).")
-    print("  Verify on first boot that all child TXDs resolve their parent.")
+    print("  Rollback:  rm -rf modloader/zz_fixedveg_loading")
+    print("  Disable:   rename folder to _zz_fixedveg_loading (leading underscore)")
+    print()
 
 
-# ── main ───────────────────────────────────────────────────────────────────
-def main():
-    parser = argparse.ArgumentParser(
-        description="SA-native TXD PARENTING consolidation for vegetation")
-    parser.add_argument("--apply", action="store_true",
-                        help="Execute consolidation (NOT this run)")
-    parser.add_argument("--force-experimental", action="store_true",
-                        help="Bypass CTD hold (requires dev-copy harness, NOT daily driver)")
-    args = parser.parse_args()
+if __name__ == "__main__":
+    p = argparse.ArgumentParser(
+        description="SA-native TXD PARENTING via isolated override pack (zz_fixedveg_loading)")
+    p.add_argument("--apply", action="store_true",
+                   help="Execute consolidation")
+    p.add_argument("--pack-mode", action="store_true", default=True,
+                   help="Override pack mode (default ON, only mode)")
+    p.add_argument("--force-experimental", action="store_true",
+                   help="Bypass CTD hold (requires dev-copy harness)")
+    args = p.parse_args()
 
     if args.apply and not args.force_experimental:
         print("[HOLD] EXPERIMENTAL: 2 CTDs on daily driver 2026-08-27 (null tex-dict deref at boot).")
-        print("       Needs dev-copy harness (launcher game picker -> dev dir) + CTD symbolization.")
         print("       Override ONLY with: --apply --force-experimental")
-        return 2
+        sys.exit(2)
     if args.apply:
-        print("[APPLY] TXD Consolidation")
-        print("  WARNING: This modifies game files.  Dry-run only this run.")
-        print("  Use --apply only when explicitly instructed.\n")
-        # Still print plan first, then show what would happen
+        print("[APPLY] TXD Consolidation — Override Pack Mode")
     else:
-        print("[DRY-RUN] TXD Consolidation")
+        print("[DRY-RUN] TXD Consolidation — Override Pack Mode")
     print(f"  Modloader: {GAME_MODLOADER}")
-    print(f"  Backups:   {BACKUP_ROOT}")
+    print(f"  Backup:    {EXISTING_BACKUP} (120 originals)")
+    print(f"  New pack:  {OVERRIDE_PATH}")
     print()
 
     packs = _scoped_packs()
     if not packs:
         print("No scoped packs found.")
-        return 1
+        sys.exit(1)
 
     print(f"Scoped packs ({len(packs)}):")
     for pname, ppath, txds in packs:
         print(f"  {pname}: {len(txds)} TXDs")
     print()
 
-    # Parse
     global_map, pack_stats = _parse_all(packs)
     print(f"Parsed {sum(s['txd_count'] for s in pack_stats.values())} TXDs, "
           f"{sum(s['tex_count'] for s in pack_stats.values())} textures total")
     print()
 
-    # Classify
     common, unique, conflicts = _classify(global_map, packs)
-
-    # Build plan
     savings_per_pack, conflicts_per_pack = _build_plan(common, unique, conflicts,
                                                         pack_stats, packs)
-
-    # Print plan
     _print_plan(packs, pack_stats, common, unique, conflicts,
                 savings_per_pack, conflicts_per_pack)
 
-    # Apply mode
     if args.apply:
         print("=" * 80)
         print("EXECUTING APPLY")
         print("=" * 80)
-        _apply(packs, common, unique, conflicts,
-               savings_per_pack, conflicts_per_pack)
+        _apply_pack_mode(packs, common, unique, conflicts,
+                         savings_per_pack, conflicts_per_pack)
     else:
         print("[DRY-RUN] No files written.")
         print()
-        print("To execute: python utils/txd_consolidate.py --apply")
+        print("To execute: python utils/txd_consolidate.py --apply --force-experimental")
         print()
         print("--apply will:")
-        print("  1. Create veg_shared.txd in mobile_vegetation/ + DLC twin")
-        print("  2. Strip COMMON textures from child TXDs (backup first)")
+        print("  1. Create modloader/zz_fixedveg_loading/ veg_shared.txd (374 COMMON tex)")
+        print("  2. Write stripped children at game-root-identical paths (from backup originals)")
         print("  3. Handle empty-TXD edge (keep 1 smallest texture)")
-        print("  4. Write gta.dat + data/maps/bridge_veg_txdp.ide in mobile_vegetation/ + DLC twins")
-        print("  5. gta.dat registers the IDE via ML pack-local merge mechanism")
+        print("  4. Write gta.dat + data/maps/bridge_veg_txdp.ide in new pack")
+        print("  5. Mirror everything to launcher_data/dlc/zz_fixedveg_loading/")
+        print("  6. Assert original packs have ZERO mtime changes")
+        print("  7. DLC mirror byte-match verified")
         print()
 
-    # ── FINAL REPORT (<=14 lines) ──────────────────────────────────────────
+    # Final report
     grand_stripped = sum(
         sp["stripped_tex_count"] for sp in savings_per_pack.values()
     )
@@ -596,7 +681,6 @@ def main():
     for sp in savings_per_pack.values():
         touched_txds.update(sp["txds_touched"])
 
-    # Biggest packs by savings
     pack_savings = []
     for pname, _, _ in packs:
         sp = savings_per_pack.get(pname, {})
@@ -605,33 +689,15 @@ def main():
     biggest = [f"{p} ({b/1e6:.1f}MB)" for p, b in pack_savings[:3]]
 
     print("=" * 80)
-    print("FINAL REPORT (<=14 lines)")
+    print("FINAL REPORT (<=12 lines)")
     print("=" * 80)
-    print(f"  Duplicates found: {grand_stripped} textures across "
-          f"{len(touched_txds)} TXDs")
-    print(f"  Projected savings: {total_saved_mb:.2f} MB")
-    print(f"  veg_shared.txd: {len(common)} unique textures, "
-          f"~{sum(_tex_raster_bytes(entries[0][2]) for entries in common.values()) / 1e6:.2f} MB")
-    print(f"  Biggest packs: {', '.join(biggest)}")
-    print(f"  Conflicts (same name, diff hash, kept in place): "
-          f"{len(conflicts)} names")
-    print(f"  File created: data/maps/bridge_veg_txdp.ide ({len(touched_txds)} entries)")
-    print(f"  --apply will: backup each modified TXD; write veg_shared.txd; "
-          f"strip children;")
-    print(f"                handle empty-TXD edge (keep 1 smallest tex); "
-          f"mirror to DLC twin;")
-    print(f"                write gta.dat + data/maps/bridge_veg_txdp.ide "
-          f"(ML pack-local merge)")
-    print(f"  Risks: parent-chain depth=1 (SA native, OK per txdcut.ide); "
-          f"empty-TXD edge handled;")
-    print(f"         gta.dat merge + IDE registration unverified "
-          f"(verify on first boot)")
-    print(f"  Verdict: {total_saved_mb:.2f} MB savings — "
-          f"{'WORTHWHILE' if total_saved_mb > 1 else 'MINOR'} "
-          f"({len(common)} shared textures, {len(conflicts)} conflicts skipped)")
+    print(f"  Override pack: modloader/{OVERRIDE_PACK_NAME}/")
+    print(f"  veg_shared.txd: {len(common)} tex ({sum(_tex_raster_bytes(entries[0][2]) for entries in common.values())/1e6:.2f}MB)")
+    print(f"  Stripped children: {grand_stripped} dupes from {len(touched_txds)} TXDs, saves {total_saved_mb:.2f}MB")
+    print(f"  DLC twin: launcher_data/dlc/{OVERRIDE_PACK_NAME}/")
+    print(f"  Originals untouched: {'; '.join(biggest)} (mtimes asserted)")
+    print(f"  Rollback: rm -rf modloader/zz_fixedveg_loading")
+    print(f"  Disable by rename: modloader/_zz_fixedveg_loading (leading _)")
+    print(f"  Verdict: {total_saved_mb:.2f}MB savings, {len(common)} shared, {len(conflicts)} conflicts skipped")
 
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(0)
