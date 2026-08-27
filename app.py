@@ -29,7 +29,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QGridLayout, QStackedWidget, QListWidget, QListWidgetItem,
     QLineEdit, QComboBox, QFileDialog, QScrollArea, QFrame, QCheckBox,
     QProgressBar, QTextEdit, QMessageBox, QSizePolicy, QSpinBox, QGroupBox,
-    QDialog, QInputDialog, QMenuBar, QProgressDialog,
+    QDialog, QInputDialog, QMenuBar, QProgressDialog, QPlainTextEdit,
 )
 
 # --- backend imports (toolkit-agnostic) -------------------------------------
@@ -71,6 +71,17 @@ class T:
     COLOR_BG_BOTTOM = "#0f0d05"
     COLOR_DANGER = "#ff5b5b"
     COLOR_SUCCESS = "#5bff8a"
+    # --- surface system (elevation layers) — SAS87 polish pass ---------------
+    COLOR_BG = "#0e0c08"                # window base, deepest layer
+    COLOR_RAISED = "#1c1810"            # elevated surfaces (inputs, HUD)
+    COLOR_BORDER = "#2a2416"            # hairline panel borders
+    COLOR_HOVER_BG = "#1f1a10"          # subtle lift on hover
+    COLOR_PRESSED_BG = "#0a0906"        # pressed darken
+    COLOR_ON_ACCENT = "#04140a"         # text sitting on accent fills
+    COLOR_FOCUS = "#66ffe600"           # focus ring — SAS87 yellow @ 40%
+    COLOR_CHECKER = "#262218"           # transparency checkerboard (editor)
+    COLOR_SCROLL_THUMB = "#2a2416"
+    COLOR_SCROLL_THUMB_HOVER = "#4a3f1e"
     DISPLAY_FONT = "Pricedown"  # resolved post-QApp; falls back visually
 
 
@@ -83,6 +94,95 @@ def _resolve_display_font(app):
             T.DISPLAY_FONT = cand
             return
     T.DISPLAY_FONT = 'Impact'
+
+
+def app_qss() -> str:
+    """Global surface system: three elevation layers + shared control language.
+
+    Layer 0 bg #0e0c08 (window) / layer 1 panel #14120a + 1px #2a2416 border
+    / layer 2 raised #1c1810. 8px radius on panels & buttons, hover = border
+    to accent + bg lift, pressed darken, 1px yellow@40% focus ring.
+    Per-widget setStyleSheet calls elsewhere intentionally override these.
+    """
+    return f"""
+    QMainWindow, QDialog {{ background: {T.COLOR_BG}; }}
+    QLabel {{ color: {T.COLOR_TEXT_BODY}; background: transparent; }}
+    QToolTip {{
+        background: {T.COLOR_RAISED}; color: {T.COLOR_TEXT_BODY};
+        border: 1px solid {T.COLOR_BORDER}; padding: 4px 8px;
+    }}
+    QScrollBar:vertical {{ background: transparent; width: 8px; margin: 0; }}
+    QScrollBar::handle:vertical {{
+        background: {T.COLOR_SCROLL_THUMB}; min-height: 24px; border-radius: 4px;
+    }}
+    QScrollBar::handle:vertical:hover {{ background: {T.COLOR_SCROLL_THUMB_HOVER}; }}
+    QScrollBar:horizontal {{ background: transparent; height: 8px; margin: 0; }}
+    QScrollBar::handle:horizontal {{
+        background: {T.COLOR_SCROLL_THUMB}; min-width: 24px; border-radius: 4px;
+    }}
+    QScrollBar::handle:horizontal:hover {{ background: {T.COLOR_SCROLL_THUMB_HOVER}; }}
+    QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+    QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+    QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox {{
+        background: {T.COLOR_RAISED}; color: {T.COLOR_TEXT_BODY};
+        border: 1px solid {T.COLOR_BORDER}; border-radius: 6px;
+        padding: 3px 6px; selection-background-color: {T.COLOR_SELECT_BLUE};
+        selection-color: {T.COLOR_TEXT_BODY};
+    }}
+    QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus {{
+        border: 1px solid {T.COLOR_FOCUS};
+    }}
+    QLineEdit:hover, QSpinBox:hover {{ border: 1px solid {T.COLOR_FOCUS}; }}
+    QComboBox {{
+        background: {T.COLOR_RAISED}; color: {T.COLOR_TEXT_BODY};
+        border: 1px solid {T.COLOR_BORDER}; border-radius: 6px; padding: 3px 8px;
+    }}
+    QComboBox:hover {{ border: 1px solid {T.COLOR_FOCUS}; }}
+    QComboBox:focus {{ border: 1px solid {T.COLOR_FOCUS}; }}
+    QComboBox::drop-down {{ border: none; width: 18px; }}
+    QComboBox QAbstractItemView {{
+        background: {T.COLOR_PANEL_BG}; color: {T.COLOR_TEXT_BODY};
+        border: 1px solid {T.COLOR_BORDER}; border-radius: 6px;
+        selection-background-color: {T.COLOR_SELECT_BLUE};
+        selection-color: {T.COLOR_TEXT_BODY}; outline: none;
+    }}
+    QMenu {{
+        background: {T.COLOR_PANEL_BG}; color: {T.COLOR_TEXT_BODY};
+        border: 1px solid {T.COLOR_BORDER}; border-radius: 8px; padding: 4px;
+    }}
+    QMenu::item {{ padding: 6px 24px 6px 12px; border-radius: 4px; }}
+    QMenu::item:selected {{ background: {T.COLOR_SELECT_BLUE}; }}
+    QMenu::separator {{ height: 1px; background: {T.COLOR_BORDER}; margin: 4px 8px; }}
+    QGroupBox {{
+        color: {T.COLOR_TEXT_BRIGHT}; border: 1px solid {T.COLOR_BORDER};
+        border-radius: 8px; margin-top: 10px; padding-top: 6px; font-weight: 600;
+    }}
+    QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
+    QPushButton {{ border-radius: 8px; }}
+    QProgressBar {{
+        background: {T.COLOR_RAISED}; border: 1px solid {T.COLOR_BORDER};
+        border-radius: 4px; text-align: center; color: {T.COLOR_TEXT_BODY};
+    }}
+    QProgressBar::chunk {{ background: {T.COLOR_SELECT_BLUE}; border-radius: 3px; }}
+    QCheckBox {{ color: {T.COLOR_TEXT_BODY}; spacing: 8px; background: transparent; }}
+    QCheckBox::indicator {{
+        width: 14px; height: 14px; border: 1px solid {T.COLOR_BORDER};
+        border-radius: 4px; background: {T.COLOR_RAISED};
+    }}
+    QCheckBox::indicator:checked {{
+        background: {T.COLOR_SELECT_BLUE}; border-color: {T.COLOR_SELECT_BLUE};
+    }}
+    QListWidget {{ alternate-background-color: {T.COLOR_RAISED}; outline: none; }}
+    QSlider::groove:horizontal {{
+        height: 4px; background: {T.COLOR_BORDER}; border-radius: 2px;
+    }}
+    QSlider::sub-page:horizontal {{ background: {T.COLOR_SELECT_BLUE}; border-radius: 2px; }}
+    QSlider::handle:horizontal {{
+        background: {T.COLOR_TEXT_BRIGHT}; width: 12px; margin: -5px 0;
+        border-radius: 6px;
+    }}
+    QSlider::handle:horizontal:hover {{ background: {T.COLOR_TEXT_BODY}; }}
+    """
 
 
 def F(name: str) -> Path:
@@ -112,17 +212,19 @@ class NavButton(QPushButton):
         self.setStyleSheet(f"""
             QPushButton {{
                 background: {T.COLOR_PANEL_BG};
-                color: #ffffff;
-                border: 1px solid {T.COLOR_DARK_GREEN};
-                border-left: 4px solid {T.COLOR_DARK_GREEN};
+                color: {T.COLOR_TEXT_BODY};
+                border: 1px solid {T.COLOR_BORDER};
+                border-left: 4px solid {T.COLOR_BORDER};
+                border-radius: 8px;
                 font-family: '{T.DISPLAY_FONT}';
                 font-size: 15px;
                 text-align: left;
                 padding: 8px 14px;
             }}
-            QPushButton:hover {{ background: {T.COLOR_PANEL_BG_LIGHT}; }}
+            QPushButton:hover {{ background: {T.COLOR_HOVER_BG}; }}
+            QPushButton:pressed {{ background: {T.COLOR_PRESSED_BG}; }}
             QPushButton:checked {{
-                color: #ffffff;
+                color: {T.COLOR_TEXT_BODY};
                 border-left: 4px solid {T.COLOR_VICE_CYAN};
                 background: {T.COLOR_SELECT_BLUE};
             }}
@@ -139,12 +241,15 @@ class ActionButton(QPushButton):
                 background: {T.COLOR_PANEL_BG_LIGHT};
                 color: {T.COLOR_TEXT_BRIGHT};
                 border: 1px solid {col};
+                border-radius: 8px;
                 padding: 7px 16px;
                 font-family: '{T.DISPLAY_FONT}';
                 font-size: 13px;
             }}
-            QPushButton:hover {{ background: {col}; color: #04140a; }}
-            QPushButton:disabled {{ color: {T.COLOR_TEXT_DIM}; border-color: {T.COLOR_DARK_GREEN}; }}
+            QPushButton:hover {{ background: {col}; color: {T.COLOR_ON_ACCENT}; }}
+            QPushButton:pressed {{ background: {T.COLOR_PRESSED_BG}; color: {T.COLOR_TEXT_DIM}; }}
+            QPushButton:disabled {{ color: {T.COLOR_TEXT_DIM}; border-color: {T.COLOR_BORDER}; }}
+            QPushButton:focus {{ border: 1px solid {T.COLOR_FOCUS}; }}
         """)
 
 
@@ -152,7 +257,7 @@ def heading(text: str, size: int = 22, color: str | None = None) -> QLabel:
     lbl = QLabel(text)
     lbl.setStyleSheet(
         f"color: {color or T.COLOR_TEXT_BRIGHT}; font-family: '{T.DISPLAY_FONT}'; "
-        f"font-size: {size}px;")
+        f"font-size: {size}px; letter-spacing: 1px;")
     return lbl
 
 
@@ -305,7 +410,7 @@ class PlayScreen(ScreenBase):
         left.addStretch(1)
         play_row = QHBoxLayout()
         play_row.addStretch(1)
-        self.play_btn = ActionButton('▶  PLAY', accent=T.COLOR_SUNSET_ORANGE)
+        self.play_btn = ActionButton('▶  PLAY', accent=T.COLOR_YELLOW)
         self.play_btn.setMinimumSize(180, 52)
         self.play_btn.clicked.connect(self._play)
         play_row.addWidget(self.play_btn)
@@ -351,6 +456,36 @@ class PlayScreen(ScreenBase):
         pv.addWidget(self.preview_bridge)
         pv.addStretch(1)
         right.addWidget(prev_box)
+
+        # ---- LIVE rail: perf-HUD echo, static placeholder (no timers/IO) ----
+        live_head = heading('LIVE', 12, T.COLOR_TEXT_DIM)
+        live_head.setStyleSheet(
+            f"color:{T.COLOR_TEXT_DIM}; font-size:11px; letter-spacing:1px;")
+        right.addWidget(live_head)
+        self.live_log = QPlainTextEdit()
+        self.live_log.setReadOnly(True)
+        self.live_log.setMaximumHeight(88)
+        self.live_log.setPlainText(
+            'SESSION LOG\n'
+            'E:/games/gtasa_skygfx_plus/\n'
+            '  gta_bridge_session.log\n'
+            '\n'
+            'waiting for first launch...\n'
+            'bridge overlay stats echo here')
+        self.live_log.setStyleSheet(
+            f"QPlainTextEdit{{background:{T.COLOR_RAISED}; color:{T.COLOR_TEXT_DIM};"
+            f"border:1px solid {T.COLOR_BORDER}; border-radius:8px;"
+            f"font-family:Consolas,'Courier New',monospace; font-size:10px;"
+            f"padding:6px;}}")
+        right.addWidget(self.live_log)
+        log_uri = Path('E:/games/gtasa_skygfx_plus/gta_bridge_session.log').as_uri()
+        open_log = QLabel(
+            f'<a href="{log_uri}" style="color:{T.COLOR_VICE_CYAN};'
+            f'text-decoration:none;">open session log \u2197</a>')
+        open_log.setCursor(Qt.PointingHandCursor)
+        open_log.setOpenExternalLinks(True)
+        right.addWidget(open_log)
+
         cols.addLayout(right, 2)
         self.root.addLayout(cols)
         self._build_quick_mods()
@@ -497,7 +632,7 @@ class PlayScreen(ScreenBase):
                 if f.name.lower() in KNOWN_EXES]
         if not exes:
             self.detect_lbl.setText('NO GAME EXE FOUND')
-            self.detect_lbl.setStyleSheet('color:#ff5533;')
+            self.detect_lbl.setStyleSheet(f'color:{T.COLOR_DANGER};')
             return
         gid = KNOWN_EXES[exes[0]]
         try:
@@ -514,7 +649,7 @@ class PlayScreen(ScreenBase):
                 self.path_lbl.setText('Path: %s' % d)
         else:
             self.detect_lbl.setText('SAVE FAILED')
-            self.detect_lbl.setStyleSheet('color:#ff5533;')
+            self.detect_lbl.setStyleSheet(f'color:{T.COLOR_DANGER};')
 
     def _play(self):
         exe = self.exe_edit.text().strip()
@@ -600,7 +735,7 @@ class LimitsScreen(ScreenBase):
                 f"QPushButton{{color:{T.COLOR_TEXT_BODY};text-align:left;"
                 f"padding:6px 10px;border:none;background:transparent;font-size:12px;}}"
                 f"QPushButton:hover{{background:{T.COLOR_SELECT_BLUE};"
-                f"color:#ffffff;}}")
+                f"color:{T.COLOR_TEXT_BODY};}}")
             mb.clicked.connect(lambda _, n=name: self._pick_preset(n))
             menu_lay.addWidget(mb)
         menu_lay.addStretch(1)
@@ -623,7 +758,7 @@ class LimitsScreen(ScreenBase):
             f"border:1px solid {T.COLOR_DARK_GREEN};font-size:13px;outline:none;}}"
             f"QListWidget::item{{padding:8px 12px;}}"
             f"QListWidget::item:selected{{background:{T.COLOR_SELECT_BLUE};"
-            f"color:#ffffff;}}"
+            f"color:{T.COLOR_TEXT_BODY};}}"
             f"QListWidget::item:hover{{background:{T.COLOR_PANEL_BG_LIGHT};}}")
         self.rows_scroll = QScrollArea()
         self.rows_scroll.setWidgetResizable(True)
@@ -1038,7 +1173,7 @@ class ModsScreen(ScreenBase):
             f"QListWidget {{ background:{T.COLOR_PANEL_BG_LIGHT}; color:{T.COLOR_TEXT_BODY};"
             f"border:1px solid {T.COLOR_DARK_GREEN}; font-size:12px; }}"
             f"QListWidget::item:selected {{ background:{T.COLOR_GROVE_GREEN};"
-            f" color:#04140a; }}")
+            f" color:{T.COLOR_ON_ACCENT}; }}")
         self.listw.currentRowChanged.connect(self._show_details)
         left.addWidget(self.listw, 1)
 
@@ -1061,7 +1196,7 @@ class ModsScreen(ScreenBase):
             f"QListWidget {{ background:{T.COLOR_PANEL_BG_LIGHT}; color:{T.COLOR_TEXT_BODY};"
             f"border:1px solid {T.COLOR_DARK_GREEN}; font-size:12px; }}"
             f"QListWidget::item:selected {{ background:{T.COLOR_GROVE_GREEN};"
-            f" color:#04140a; }}")
+            f" color:{T.COLOR_ON_ACCENT}; }}")
         self.ml_listw.itemDoubleClicked.connect(self._toggle_modloader)
         self.ml_listw.setAcceptDrops(True)
         self.ml_listw.setDropIndicatorShown(True)
@@ -1339,7 +1474,7 @@ class ModsScreen(ScreenBase):
                     txd = txdlite.TxdFile.load(str(p))
                 except Exception as e:
                     item = QListWidgetItem(f'[CORRUPT] {p.relative_to(root.parent)}  ({e})')
-                    item.setForeground(QColor('#ffd23f'))
+                    item.setForeground(QColor(T.COLOR_YELLOW))
                     self.listw.addItem(item)
                     self._scan_results.append((p, None))
                     broken += 1
@@ -1350,7 +1485,7 @@ class ModsScreen(ScreenBase):
                 if issues:
                     broken += 1
                     item = QListWidgetItem(f'[BROKEN] {rel}  — {len(issues)} issue(s)')
-                    item.setForeground(QColor('#ffd23f'))
+                    item.setForeground(QColor(T.COLOR_YELLOW))
                     self.listw.addItem(item)
                     self._scan_results.append((p, issues))
                 elif opt:
@@ -1532,7 +1667,7 @@ class TxdViewport(QWidget):
         for y in range(0, h, cs):
             for x in range(0, w, cs):
                 if (x // cs + y // cs) % 2 == 0:
-                    p.fillRect(x, y, cs, cs, QColor('#2a2a2e'))
+                    p.fillRect(x, y, cs, cs, QColor(T.COLOR_CHECKER))
         if not self._pix:
             p.setPen(QColor(T.COLOR_TEXT_DIM))
             p.drawText(self.rect(), Qt.AlignCenter, 'no texture')
@@ -1796,7 +1931,7 @@ class PixelCanvas(QWidget):
     def paintEvent(self, ev):  # noqa: N802
         d = self.dlg
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor('#1a1a1c'))
+        p.fillRect(self.rect(), QColor(T.COLOR_RAISED))
         img = d.image
         cw, ch = img.width * d._zoom, img.height * d._zoom
         ox = (self.width() - cw) // 2 + d._pan[0]
@@ -1807,7 +1942,7 @@ class PixelCanvas(QWidget):
             for xx in range(0, img.width(), 1):
                 if (xx + yy) % 2 == 0:
                     p.fillRect(ox + xx * d._zoom, oy + yy * d._zoom,
-                               d._zoom, d._zoom, QColor('#2a2a2e'))
+                               d._zoom, d._zoom, QColor(T.COLOR_CHECKER))
         self._buf = img.tobytes('raw', 'RGBA')
         qimg = QImage(self._buf, img.width, img.height,
                       QImage.Format_RGBA8888)
@@ -2432,7 +2567,8 @@ class MainWindow(QMainWindow):
         self.launcher = launcher
         self.setWindowTitle('GTA BRIDGE LAUNCHER')
         self.setMinimumSize(1080, 700)
-        self.setStyleSheet(f"background: {T.COLOR_BG_BOTTOM};")
+        self.setStyleSheet(f"background: {T.COLOR_BG};")
+        self._aero_applied = False
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -2443,8 +2579,8 @@ class MainWindow(QMainWindow):
         # sidebar
         side = QWidget()
         side.setFixedWidth(210)
-        side.setStyleSheet(f"background: {T.COLOR_BG_BOTTOM}; "
-                           f"border-right: 1px solid {T.COLOR_DARK_GREEN};")
+        side.setStyleSheet(f"background: {T.COLOR_BG}; "
+                           f"border-right: 1px solid {T.COLOR_BORDER};")
         sv = QVBoxLayout(side)
         sv.setContentsMargins(10, 18, 10, 14)
         logo = heading('GTA BRIDGE', 20)
@@ -2479,6 +2615,18 @@ class MainWindow(QMainWindow):
         for j, b in enumerate(self.nav_buttons):
             b.setChecked(j == ix)
         self.screens.setCurrentIndex(ix)
+
+    def showEvent(self, ev):  # noqa: N802
+        super().showEvent(ev)
+        # Aero glass + dark titlebar, native frame kept (no frameless chrome).
+        # Applied exactly once; pure-ctypes helper no-ops gracefully off-Win10.
+        if not self._aero_applied:
+            self._aero_applied = True
+            try:
+                from managers.aero import apply_aero
+                apply_aero(int(self.winId()))
+            except Exception:
+                pass
 
     def closeEvent(self, ev):  # noqa: N802
         ps = self.screens.widget(0)
@@ -2522,6 +2670,7 @@ def _main_inner():
                            config_path=str(F('config')))
     app = QApplication(sys.argv)
     _resolve_display_font(app)
+    app.setStyleSheet(app_qss())
     win = MainWindow(launcher)
     win.show()
     sys.exit(app.exec_())

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <cstdarg>
 
 // injector + pool struct
 #include "injector/injector.hpp"
@@ -324,6 +325,7 @@ static float    s_minFps   = 1e9f, s_maxFps = 0.f;
 static uint32_t s_frameCount = 0, s_lastTick = 0, s_lastCsv = 0, s_lastFrameMs = 16;
 static uint32_t s_ftHist[120];                   // last frametimes (ms)
 static int      s_ftIdx = 0;
+static bool     s_wantDiag = false;              // set by DrawBridgeOverlay before StatHudFrame
 
 static std::string OvIniPath(){ return GetGameDir()+"\\gta_bridge.ini"; }
 static void SaveOverlayMode(){
@@ -342,6 +344,74 @@ static int PoolUsageByName(const char* sub,int& u,int& m){
         if(k.find(want)!=std::string::npos && kv.second(u,m)) return 1; }
     return 0;
 }
+
+// ===== Session log (gta_bridge_session.log) — human-readable, crash-safe =====
+// FORMAT:
+//   ==== GTA BRIDGE SESSION 2026-08-27 14:55:02 ====
+//   [14:55:02] INIT asi=v2.3 streaming=<dbMB> lod=<maxLodScale> overlay=<0|1|2>
+//   [14:55:10] OVERLAY mode=FULL (user F7)
+//   [14:55:11] SAMPLE fps=30.3 avg_ms=33.1 min=31.8 max=32.8 stream_used=10 models=9959/10150
+//   ...
+//   [15:02:44] POOLWARN <poolname> used>=95%
+//   [15:03:00] EXIT duration=478s frames=14320 avg_fps=30.1
+static FILE*       g_sessionLog = nullptr;
+static bool        g_sessionHeaderWritten = false;
+static uint32_t    g_sessionStartTick = 0;
+static std::map<std::string,uint32_t> g_poolWarnTick; // throttle POOLWARN per pool per 30s
+
+static void SessionLogWrite(const char* fmt, ...) {
+    if(!g_sessionLog) {
+        std::string path = GetGameDir() + "\\gta_bridge_session.log";
+        fopen_s(&g_sessionLog, path.c_str(), "a");
+        if(!g_sessionLog) return;
+    }
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    char prefix[32];
+    sprintf(prefix, "[%02d:%02d:%02d] ", st.wHour, st.wMinute, st.wSecond);
+    fputs(prefix, g_sessionLog);
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(g_sessionLog, fmt, args);
+    va_end(args);
+    fputc('\n', g_sessionLog);
+    fflush(g_sessionLog);
+}
+
+static void SessionInit() {
+    if(g_sessionHeaderWritten) return;
+    g_sessionHeaderWritten = true;
+    g_sessionStartTick = GetTickCount();
+    std::string path = GetGameDir() + "\\gta_bridge_session.log";
+    fopen_s(&g_sessionLog, path.c_str(), "a");
+    if(!g_sessionLog) return;
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    fprintf(g_sessionLog, "==== GTA BRIDGE SESSION %04d-%02d-%02d %02d:%02d:%02d ====\n",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    // INIT line
+    fprintf(g_sessionLog, "[%02d:%02d:%02d] INIT asi=v2.3 streaming=%d lod=%.1f overlay=%d\n",
+            st.wHour, st.wMinute, st.wSecond,
+            g_streamingMemMb, g_maxLodScale, s_ovMode);
+    fflush(g_sessionLog);
+}
+
+static void SessionExit() {
+    if(!g_sessionLog) return;
+    uint32_t now = GetTickCount();
+    uint32_t durationMs = now - g_sessionStartTick;
+    float durationSec = (float)durationMs / 1000.0f;
+    float avgFps = (durationSec > 0.0f) ? (float)s_frameCount / durationSec : 0.0f;
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    fprintf(g_sessionLog, "[%02d:%02d:%02d] EXIT duration=%.0fs frames=%u avg_fps=%.1f\n",
+            st.wHour, st.wMinute, st.wSecond,
+            durationSec, s_frameCount, avgFps);
+    fflush(g_sessionLog);
+    fclose(g_sessionLog);
+    g_sessionLog = nullptr;
+}
+
 static void StatHudFrame(){
     DWORD now=GetTickCount();
     if(s_lastTick==0){ s_lastTick=now; s_lastCsv=now; return; }
@@ -350,21 +420,49 @@ static void StatHudFrame(){
     double fps=1000.0/dt; if(fps>s_maxFps)s_maxFps=(float)fps; if(fps<s_minFps)s_minFps=(float)fps;
     s_avgMs+=((double)dt-s_avgMs)*0.05;             // smoothed frame ms
     s_ftHist[s_ftIdx]=dt; s_ftIdx=(s_ftIdx+1)%120;
-    // F7 edge detect -> cycle mode + persist + session min/max reset
+    // F7 edge detect -> cycle mode + persist + session min/max reset + log
     bool f7now=(GetKeyState(VK_F7)&0x8000)!=0;
-    if(f7now&&!s_f7Prev){ s_ovMode=(s_ovMode+1)%3; SaveOverlayMode(); s_minFps=1e9f;s_maxFps=0.f; }
+    if(f7now&&!s_f7Prev){
+        s_ovMode=(s_ovMode+1)%3; SaveOverlayMode(); s_minFps=1e9f;s_maxFps=0.f;
+        const char* modeStr = s_ovMode==1?"FULL":(s_ovMode==2?"MIN":"OFF");
+        SessionLogWrite("OVERLAY mode=%s (user F7)", modeStr);
+    }
     s_f7Prev=f7now;
-    // CSV autolog when sweep candidate active ([BRIDGE] SWEEP_LOG=1)
-    if(s_ovMode&&GetPrivateProfileIntA("BRIDGE","SWEEP_LOG",0,OvIniPath().c_str())&&(now-s_lastCsv)>=1000){
+    // 1Hz tick: CSV autolog, session SAMPLE, POOLWARN
+    if((now-s_lastCsv)>=1000){
         s_lastCsv=now;
-        int au=-1,uu=-1; bool sm=GetMemUsage(au,uu);
-        int tu=-1,tm=-1,mu=-1,mm=-1;
-        PoolUsageByName("textur",tu,tm); PoolUsageByName("model",mu,mm);
-        FILE*f=nullptr; fopen_s(&f,(GetGameDir()+"\\gta_bridge_stats.csv").c_str(),"a");
-        if(f){ if(ftell(f)==0) fputs("ts,fps,min,avg,max,max_ms,streaming_used,textures_used,models_used\n",f);
-               fprintf(f,"%lu,%.1f,%.1f,%.1f,%.1f,%lu,%d,%d,%d\n",(unsigned long)now,
-                       fps,s_minFps,(float)(1000.0/s_avgMs),s_maxFps,(unsigned long)s_lastFrameMs,
-                       uu,tu>=0?tu:-1,mu>=0?mu:-1); fclose(f);}
+        // CSV autolog when sweep candidate active ([BRIDGE] SWEEP_LOG=1)
+        if(s_ovMode&&GetPrivateProfileIntA("BRIDGE","SWEEP_LOG",0,OvIniPath().c_str())){
+            int au=-1,uu=-1; bool sm=GetMemUsage(au,uu);
+            int tu=-1,tm=-1,mu=-1,mm=-1;
+            PoolUsageByName("textur",tu,tm); PoolUsageByName("model",mu,mm);
+            FILE*f=nullptr; fopen_s(&f,(GetGameDir()+"\\gta_bridge_stats.csv").c_str(),"a");
+            if(f){ if(ftell(f)==0) fputs("ts,fps,min,avg,max,max_ms,streaming_used,textures_used,models_used\n",f);
+                   fprintf(f,"%lu,%.1f,%.1f,%.1f,%.1f,%lu,%d,%d,%d\n",(unsigned long)now,
+                           fps,s_minFps,(float)(1000.0/s_avgMs),s_maxFps,(unsigned long)s_lastFrameMs,
+                           uu,tu>=0?tu:-1,mu>=0?mu:-1); fclose(f);}
+        }
+        // Session SAMPLE (when overlay visible OR F5 diag page on)
+        if(s_ovMode!=0 || s_wantDiag){
+            int au=-1,uu=-1; GetMemUsage(au,uu);
+            int mu=-1,mm=-1; PoolUsageByName("model",mu,mm);
+            SessionLogWrite("SAMPLE fps=%.1f avg_ms=%.1f min=%.1f max=%.1f stream_used=%d models=%d/%d",
+                            fps,(float)(1000.0/s_avgMs),s_minFps,s_maxFps,
+                            uu,mu>=0?mu:-1,mm>=0?mm:-1);
+        }
+        // POOLWARN: any pool >=95% used, throttled 30s per pool
+        uint32_t nowMs = GetTickCount();
+        for(auto &pg : g_poolGlobals){
+            int used=0,maxv=0;
+            if(!ReadPoolUsage(pg.addr,used,maxv) || maxv<=0) continue;
+            if(used*100/maxv >= 95){
+                auto it = g_poolWarnTick.find(pg.name);
+                if(it==g_poolWarnTick.end() || (nowMs-it->second)>=30000){
+                    g_poolWarnTick[pg.name]=nowMs;
+                    SessionLogWrite("POOLWARN %s used=%d/%d (%d%%)",pg.name,used,maxv,used*100/maxv);
+                }
+            }
+        }
     }
 }
 static void StatsText(const char* t,float x,float y,float sc,const StatCol* c){
@@ -410,12 +508,12 @@ static void DrawBridgeOverlay(){
     DynamicRenderScale();
     // streaming supervisor: pressure-driven eviction + priority fast-load drain
     StreamingSupervisor();
+    s_wantDiag = TestShouldDraw();
     StatHudFrame();
-    bool wantDiag = TestShouldDraw();
-    if(!wantDiag && s_ovMode==0) return;
+    if(!s_wantDiag && s_ovMode==0) return;
     if(!BeginDraw()) return;
     if(s_ovMode) DrawStatsBlock(s_ovMode==1);
-    if(wantDiag){
+    if(s_wantDiag){
     // header
     DrawText("GTA BRIDGE — diag (F5 page)");
     // system mem vs streaming mem
@@ -430,7 +528,7 @@ static void DrawBridgeOverlay(){
     }
     EndDraw();
 }
-static void PatchDrawer(){ LoadOverlayState(); DrawHUD.fun = injector::MakeCALL(0x53E4FF, DrawBridgeOverlay).get(); }
+static void PatchDrawer(){ LoadOverlayState(); SessionInit(); DrawHUD.fun = injector::MakeCALL(0x53E4FF, DrawBridgeOverlay).get(); }
 
 static DWORD WINAPI PipeServerThread(LPVOID) {
     while(!g_shutdown) {
@@ -532,6 +630,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         g_shutdown = false;
         g_thread = CreateThread(NULL, 0, PipeServerThread, NULL, 0, NULL);
     } else if(reason==DLL_PROCESS_DETACH) {
+        SessionExit();
         g_shutdown = true;
         // wake pipe if waiting: connect as client to unblock ConnectNamedPipe
         HANDLE h = CreateFileA(PIPE_NAME, GENERIC_READ|GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
