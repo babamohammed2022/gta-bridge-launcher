@@ -23,9 +23,14 @@
 - [ ] Crash log: rename a required file, launch, verify friendly dialog + log in launcher_data/logs/
 
 ## Distributable (friend zip)
-- [ ] Contents per FRIEND_TEST_README.txt (no .cs scripts, no .bak, no manifests)
-- [ ] Includes: ASI loader, gta_bridge.asi+ini, skygfx, SilentPatch, LimitAdjuster, CLEO runtime (no custom scripts), data patches, launcher, txdfix.dll, presets.json
+- [ ] Build: `python utils/friend_zip.py --out <staging_dir>` (defaults to `dist/`)
+- [ ] Contents:
+  - 6 packs (runtime_redist, cleo_scripts, skygfx_core, silentpatch, limit_adjuster, data_patches) — no *.cs scripts, no cleo_saves/*.sav, no authoring junk
+  - GTA_Bridge_Launcher.exe + txdfix.dll (zip root)
+  - launcher_data/dlc/index.json, launcher_data/dlc/mods_index.json, launcher_data/packs/presets.json, launcher_data/profiles/*.json
+  - MANIFEST.txt + README.txt
 - [ ] Test-extract onto a CLEAN SA 1.0 copy, launch once
+- [ ] Clean-copy test: extract to empty dir, verify no stray files outside zip root
 
 ## Hard rules re-check (must NEVER ship a build violating these)
 - [ ] No code path renames modloader folders

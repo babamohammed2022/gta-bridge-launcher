@@ -206,6 +206,32 @@ class ProfileManager:
                 pass
         return True
 
+    # ---- encode a sweep result as a perf profile ----
+    def encode_perf_profile(self, row: Dict) -> Optional[Path]:
+        """Create a perf profile JSON from a sweep result row.
+
+        *row* should contain keys ``sweep_id``, ``candidate_id``, ``rank``,
+        and optionally ``overrides`` (dict).  Only keys in *BRIDGE_KEYS* are
+        written into the profile's ``bridge`` section.
+        """
+        ov = {k: str(v) for k, v in (row.get('overrides') or {}).items()
+              if k in self.BRIDGE_KEYS}
+        if not ov:
+            return None
+        data = {
+            'name': 'perf',
+            'description': 'Perf profile from sweep %s/%s (rank %.2f)' % (
+                row.get('sweep_id', '?'),
+                row.get('candidate_id', '?'),
+                float(row.get('rank', 0.0))),
+            'skygfx': {},
+            'bridge': ov,
+            'notes': 'Encoded by encode_perf_profile; SkyGfx ini untouched.',
+        }
+        p = self.profiles_dir() / 'perf.json'
+        p.write_text(json.dumps(data, indent=2), encoding='utf-8')
+        return p
+
     # ---- seed the two built-in profiles on first run ----
     def ensure_default_profiles(self, game_dir) -> None:
         if 'legacy+' not in self.list_profiles():
