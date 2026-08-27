@@ -46,8 +46,8 @@ _TABLE: Optional[List[ExeVersion]] = None
 
 def _resolve_table_path() -> str:
     """Find the exe_hashes.json file, whether running from source or bundled."""
-    # When running from source: data/exe_hashes.json next to the project root
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # When running from source: data/exe_hashes.json inside the installer_src package
+    here = os.path.dirname(os.path.abspath(__file__))
     candidate = os.path.join(here, "data", "exe_hashes.json")
     if os.path.isfile(candidate):
         return candidate

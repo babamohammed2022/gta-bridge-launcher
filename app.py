@@ -51,7 +51,10 @@ KNOWN_EXES = {
 # imported after a QApplication exists -> wizard is imported lazily in
 # InstallerScreen._launch(). Palette mirrored here for pre-QApp UI building.
 class T:
-    # SAS 87 yellow theme — dark warm background, yellow accents, white text
+    # SAS 87 yellow base + Sony Walkman (mid-2005) accents -- dark warm
+    # background, yellow headlines/primary CTA, Walkman orange for
+    # checked/selected fills and borders, Walkman green for hover lifts,
+    # focus rings and positive states. Links stay blue.
     COLOR_DARK_GREEN = "#3d3410"        # border tone (dark olive)
     COLOR_PANEL_BG = "#14120a"          # near-black warm
     COLOR_PANEL_BG_LIGHT = "#241f0e"
@@ -59,18 +62,19 @@ class T:
     COLOR_TEXT_BODY = "#ffffff"         # white body text
     COLOR_TEXT_DIM = "#9a9270"
     COLOR_GROVE_GREEN = "#c9b800"       # primary button accent (yellow)
-    COLOR_SUNSET_ORANGE = "#ff6a2b"
+    COLOR_WALKMAN_ORANGE = "#e67300"    # checked/selected fills + borders
+    COLOR_WALKMAN_GREEN = "#61a60e"     # hover lifts, focus, positive states
+    COLOR_SUNSET_ORANGE = "#e67300"     # unified with Walkman orange
     COLOR_SUNSET_PINK = "#ff2bd6"
-    COLOR_VICE_CYAN = "#00f0ff"
-    COLOR_SELECT_BLUE = "#0057d8"       # selected-row blue highlight
     COLOR_LCS_AMBER = "#ffb84d"
+    COLOR_LINK = "#4aa3ff"              # hyperlink blue -- links stay blue
     COLOR_YELLOW = "#ffe600"
     COLOR_BG_TOP = "#1a1a05"
     COLOR_BG_MID = "#5e4a1f"
     COLOR_BG_HORIZON = "#3a2b0a"
     COLOR_BG_BOTTOM = "#0f0d05"
     COLOR_DANGER = "#ff5b5b"
-    COLOR_SUCCESS = "#5bff8a"
+    COLOR_SUCCESS = "#61a60e"           # positive states -- Walkman green
     # --- surface system (elevation layers) — SAS87 polish pass ---------------
     COLOR_BG = "#0e0c08"                # window base, deepest layer
     COLOR_RAISED = "#1c1810"            # elevated surfaces (inputs, HUD)
@@ -78,7 +82,7 @@ class T:
     COLOR_HOVER_BG = "#1f1a10"          # subtle lift on hover
     COLOR_PRESSED_BG = "#0a0906"        # pressed darken
     COLOR_ON_ACCENT = "#04140a"         # text sitting on accent fills
-    COLOR_FOCUS = "#66ffe600"           # focus ring — SAS87 yellow @ 40%
+    COLOR_FOCUS = "#6677b900"           # focus ring -- Walkman green @ 40%
     COLOR_CHECKER = "#262218"           # transparency checkerboard (editor)
     COLOR_SCROLL_THUMB = "#2a2416"
     COLOR_SCROLL_THUMB_HOVER = "#4a3f1e"
@@ -100,34 +104,37 @@ def app_qss() -> str:
     """Global surface system: three elevation layers + shared control language.
 
     Layer 0 bg #0e0c08 (window) / layer 1 panel #14120a + 1px #2a2416 border
-    / layer 2 raised #1c1810. 8px radius on panels & buttons, hover = border
-    to accent + bg lift, pressed darken, 1px yellow@40% focus ring.
+    / layer 2 raised #1c1810. Vista-crisp geometry: 2px radius on controls,
+    3px max on panels, flat solid fills (no gradients), hover = border to
+    accent + bg lift, pressed darken, 1px Walkman-green@40% focus ring.
     Per-widget setStyleSheet calls elsewhere intentionally override these.
     """
     return f"""
     QMainWindow, QDialog {{ background: {T.COLOR_BG}; }}
-    QLabel {{ color: {T.COLOR_TEXT_BODY}; background: transparent; }}
+    QLabel {{ color: {T.COLOR_TEXT_BODY}; background: transparent;
+        font-kerning: normal; }}
     QToolTip {{
         background: {T.COLOR_RAISED}; color: {T.COLOR_TEXT_BODY};
-        border: 1px solid {T.COLOR_BORDER}; padding: 4px 8px;
+        border: 1px solid {T.COLOR_BORDER}; border-radius: 2px;
+        padding: 4px 8px; font-kerning: normal;
     }}
     QScrollBar:vertical {{ background: transparent; width: 8px; margin: 0; }}
     QScrollBar::handle:vertical {{
-        background: {T.COLOR_SCROLL_THUMB}; min-height: 24px; border-radius: 4px;
+        background: {T.COLOR_SCROLL_THUMB}; min-height: 24px; border-radius: 2px;
     }}
     QScrollBar::handle:vertical:hover {{ background: {T.COLOR_SCROLL_THUMB_HOVER}; }}
     QScrollBar:horizontal {{ background: transparent; height: 8px; margin: 0; }}
     QScrollBar::handle:horizontal {{
-        background: {T.COLOR_SCROLL_THUMB}; min-width: 24px; border-radius: 4px;
+        background: {T.COLOR_SCROLL_THUMB}; min-width: 24px; border-radius: 2px;
     }}
     QScrollBar::handle:horizontal:hover {{ background: {T.COLOR_SCROLL_THUMB_HOVER}; }}
     QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
     QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
     QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox {{
         background: {T.COLOR_RAISED}; color: {T.COLOR_TEXT_BODY};
-        border: 1px solid {T.COLOR_BORDER}; border-radius: 6px;
-        padding: 3px 6px; selection-background-color: {T.COLOR_SELECT_BLUE};
-        selection-color: {T.COLOR_TEXT_BODY};
+        border: 1px solid {T.COLOR_BORDER}; border-radius: 2px;
+        padding: 3px 6px; selection-background-color: {T.COLOR_WALKMAN_ORANGE};
+        selection-color: {T.COLOR_ON_ACCENT}; font-kerning: normal;
     }}
     QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus {{
         border: 1px solid {T.COLOR_FOCUS};
@@ -135,51 +142,53 @@ def app_qss() -> str:
     QLineEdit:hover, QSpinBox:hover {{ border: 1px solid {T.COLOR_FOCUS}; }}
     QComboBox {{
         background: {T.COLOR_RAISED}; color: {T.COLOR_TEXT_BODY};
-        border: 1px solid {T.COLOR_BORDER}; border-radius: 6px; padding: 3px 8px;
+        border: 1px solid {T.COLOR_BORDER}; border-radius: 2px; padding: 3px 8px;
     }}
     QComboBox:hover {{ border: 1px solid {T.COLOR_FOCUS}; }}
     QComboBox:focus {{ border: 1px solid {T.COLOR_FOCUS}; }}
     QComboBox::drop-down {{ border: none; width: 18px; }}
     QComboBox QAbstractItemView {{
         background: {T.COLOR_PANEL_BG}; color: {T.COLOR_TEXT_BODY};
-        border: 1px solid {T.COLOR_BORDER}; border-radius: 6px;
-        selection-background-color: {T.COLOR_SELECT_BLUE};
-        selection-color: {T.COLOR_TEXT_BODY}; outline: none;
+        border: 1px solid {T.COLOR_BORDER}; border-radius: 2px;
+        selection-background-color: {T.COLOR_WALKMAN_ORANGE};
+        selection-color: {T.COLOR_ON_ACCENT}; outline: none;
     }}
     QMenu {{
         background: {T.COLOR_PANEL_BG}; color: {T.COLOR_TEXT_BODY};
-        border: 1px solid {T.COLOR_BORDER}; border-radius: 8px; padding: 4px;
+        border: 1px solid {T.COLOR_BORDER}; border-radius: 2px; padding: 4px;
+        font-kerning: normal;
     }}
-    QMenu::item {{ padding: 6px 24px 6px 12px; border-radius: 4px; }}
-    QMenu::item:selected {{ background: {T.COLOR_SELECT_BLUE}; }}
+    QMenu::item {{ padding: 6px 24px 6px 12px; border-radius: 2px; }}
+    QMenu::item:selected {{
+        background: {T.COLOR_WALKMAN_ORANGE}; color: {T.COLOR_ON_ACCENT}; }}
     QMenu::separator {{ height: 1px; background: {T.COLOR_BORDER}; margin: 4px 8px; }}
     QGroupBox {{
         color: {T.COLOR_TEXT_BRIGHT}; border: 1px solid {T.COLOR_BORDER};
-        border-radius: 8px; margin-top: 10px; padding-top: 6px; font-weight: 600;
+        border-radius: 3px; margin-top: 10px; padding-top: 6px; font-weight: 600;
     }}
     QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
-    QPushButton {{ border-radius: 8px; }}
+    QPushButton {{ border-radius: 2px; font-kerning: normal; }}
     QProgressBar {{
         background: {T.COLOR_RAISED}; border: 1px solid {T.COLOR_BORDER};
-        border-radius: 4px; text-align: center; color: {T.COLOR_TEXT_BODY};
+        border-radius: 2px; text-align: center; color: {T.COLOR_TEXT_BODY};
     }}
-    QProgressBar::chunk {{ background: {T.COLOR_SELECT_BLUE}; border-radius: 3px; }}
+    QProgressBar::chunk {{ background: {T.COLOR_WALKMAN_ORANGE}; border-radius: 2px; }}
     QCheckBox {{ color: {T.COLOR_TEXT_BODY}; spacing: 8px; background: transparent; }}
     QCheckBox::indicator {{
         width: 14px; height: 14px; border: 1px solid {T.COLOR_BORDER};
-        border-radius: 4px; background: {T.COLOR_RAISED};
+        border-radius: 2px; background: {T.COLOR_RAISED};
     }}
     QCheckBox::indicator:checked {{
-        background: {T.COLOR_SELECT_BLUE}; border-color: {T.COLOR_SELECT_BLUE};
+        background: {T.COLOR_WALKMAN_ORANGE}; border-color: {T.COLOR_WALKMAN_ORANGE};
     }}
     QListWidget {{ alternate-background-color: {T.COLOR_RAISED}; outline: none; }}
     QSlider::groove:horizontal {{
         height: 4px; background: {T.COLOR_BORDER}; border-radius: 2px;
     }}
-    QSlider::sub-page:horizontal {{ background: {T.COLOR_SELECT_BLUE}; border-radius: 2px; }}
+    QSlider::sub-page:horizontal {{ background: {T.COLOR_WALKMAN_ORANGE}; border-radius: 2px; }}
     QSlider::handle:horizontal {{
         background: {T.COLOR_TEXT_BRIGHT}; width: 12px; margin: -5px 0;
-        border-radius: 6px;
+        border-radius: 2px;
     }}
     QSlider::handle:horizontal:hover {{ background: {T.COLOR_TEXT_BODY}; }}
     """
@@ -205,7 +214,7 @@ def _data_dir() -> Path:
 
 class NavButton(QPushButton):
     def __init__(self, text: str):
-        super().__init__(text)
+        super().__init__(text.upper())
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setMinimumHeight(44)
@@ -215,18 +224,24 @@ class NavButton(QPushButton):
                 color: {T.COLOR_TEXT_BODY};
                 border: 1px solid {T.COLOR_BORDER};
                 border-left: 4px solid {T.COLOR_BORDER};
-                border-radius: 8px;
-                font-family: '{T.DISPLAY_FONT}';
+                border-radius: 2px;
+                font-family: 'Segoe UI Light','Segoe UI';
                 font-size: 15px;
+                font-weight: 25;
+                letter-spacing: 2px;
+                font-kerning: normal;
                 text-align: left;
                 padding: 8px 14px;
             }}
-            QPushButton:hover {{ background: {T.COLOR_HOVER_BG}; }}
+            QPushButton:hover {{
+                background: {T.COLOR_HOVER_BG};
+                border-left: 4px solid {T.COLOR_WALKMAN_GREEN};
+            }}
             QPushButton:pressed {{ background: {T.COLOR_PRESSED_BG}; }}
             QPushButton:checked {{
-                color: {T.COLOR_TEXT_BODY};
-                border-left: 4px solid {T.COLOR_VICE_CYAN};
-                background: {T.COLOR_SELECT_BLUE};
+                color: {T.COLOR_ON_ACCENT};
+                border-left: 4px solid {T.COLOR_YELLOW};
+                background: {T.COLOR_WALKMAN_ORANGE};
             }}
         """)
 
@@ -241,10 +256,11 @@ class ActionButton(QPushButton):
                 background: {T.COLOR_PANEL_BG_LIGHT};
                 color: {T.COLOR_TEXT_BRIGHT};
                 border: 1px solid {col};
-                border-radius: 8px;
+                border-radius: 2px;
                 padding: 7px 16px;
-                font-family: '{T.DISPLAY_FONT}';
-                font-size: 13px;
+                font-family: 'Segoe UI';
+                font-size: 9pt;
+                font-kerning: normal;
             }}
             QPushButton:hover {{ background: {col}; color: {T.COLOR_ON_ACCENT}; }}
             QPushButton:pressed {{ background: {T.COLOR_PRESSED_BG}; color: {T.COLOR_TEXT_DIM}; }}
@@ -254,10 +270,19 @@ class ActionButton(QPushButton):
 
 
 def heading(text: str, size: int = 22, color: str | None = None) -> QLabel:
-    lbl = QLabel(text)
+    """Zune/WP7 section header: Segoe UI Light, uppercase, wide tracking.
+
+    Page-level titles (size >= 20) carry the active-section accent: a
+    2px #ffe600 underline, one accent system for the whole UI.
+    """
+    lbl = QLabel(text.upper())
+    accent = (f" border-bottom: 2px solid {T.COLOR_YELLOW};"
+              if size >= 20 else "")
     lbl.setStyleSheet(
-        f"color: {color or T.COLOR_TEXT_BRIGHT}; font-family: '{T.DISPLAY_FONT}'; "
-        f"font-size: {size}px; letter-spacing: 1px;")
+        f"color: {color or T.COLOR_TEXT_BRIGHT}; "
+        f"font-family: 'Segoe UI Light','Segoe UI'; "
+        f"font-size: {size}px; font-weight: 25; letter-spacing: 2px; "
+        f"font-kerning: normal;{accent}")
     return lbl
 
 
@@ -340,6 +365,41 @@ CONFLICT_GROUPS = {
 }
 
 
+class _PreviewCanvas(QWidget):
+    """Center-left game preview render frame (pure paint placeholder).
+
+    Checkerboard bed + hairline frame, kept square via heightForWidth.
+    No timers, no IO -- a static stage for a future real render feed.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(240, 240)
+        sp = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        sp.setHeightForWidth(True)
+        self.setSizePolicy(sp)
+
+    def heightForWidth(self, w: int) -> int:
+        return min(max(w, 240), 420)
+
+    def paintEvent(self, ev):  # noqa: N802
+        p = QPainter(self)
+        r = self.rect()
+        tile = QPixmap(24, 24)
+        tile.fill(QColor(T.COLOR_RAISED))
+        tp = QPainter(tile)
+        tp.fillRect(0, 0, 12, 12, QColor(T.COLOR_CHECKER))
+        tp.fillRect(12, 12, 12, 12, QColor(T.COLOR_CHECKER))
+        tp.end()
+        p.drawTiledPixmap(r, tile)
+        p.setPen(QColor(T.COLOR_BORDER))
+        p.drawRect(r.adjusted(0, 0, -1, -1))
+        p.setPen(QColor(T.COLOR_TEXT_DIM))
+        p.setFont(QFont('Segoe UI', 9))
+        p.drawText(r, Qt.AlignCenter, 'GAME PREVIEW RENDER')
+        p.end()
+
+
 class PlayScreen(ScreenBase):
     launch_requested = pyqtSignal()
 
@@ -360,7 +420,7 @@ class PlayScreen(ScreenBase):
             f"border:1px solid {T.COLOR_DARK_GREEN}; padding:4px;")
         self.profile_combo.currentTextChanged.connect(self._on_profile_selected)
         prof_row.addWidget(self.profile_combo, 1)
-        add_prof = ActionButton('+', accent=T.COLOR_VICE_CYAN)
+        add_prof = ActionButton('+', accent=T.COLOR_WALKMAN_GREEN)
         add_prof.setFixedWidth(40)
         add_prof.setToolTip('Add current skygfx.ini / gta_bridge.ini as a new profile')
         add_prof.clicked.connect(self._add_current_profile)
@@ -411,22 +471,64 @@ class PlayScreen(ScreenBase):
             f"color:{T.COLOR_TEXT_DIM};font-size:10px;padding:0;")
         form.addWidget(self.preflight_lbl, 5, 0, 1, 3)
         left.addLayout(form)
-        left.addStretch(1)
+
+        # ---- SESSION LOG block: sits directly under the Game Dir row -------
+        live_row = QHBoxLayout()
+        live_head = heading('LIVE', 12, T.COLOR_WALKMAN_GREEN)
+        live_head.setStyleSheet(
+            f"color:{T.COLOR_WALKMAN_GREEN}; font-size:11px; letter-spacing:1px;")
+        live_row.addWidget(live_head)
+        live_row.addStretch(1)
+        log_uri = Path('E:/games/gtasa_skygfx_plus/gta_bridge_session.log').as_uri()
+        open_log = QLabel(
+            f'<a href="{log_uri}" style="color:{T.COLOR_LINK};'
+            f'text-decoration:none;">open session log \u2197</a>')
+        open_log.setCursor(Qt.PointingHandCursor)
+        open_log.setOpenExternalLinks(True)
+        live_row.addWidget(open_log)
+        left.addLayout(live_row)
+        self.live_log = QPlainTextEdit()
+        self.live_log.setReadOnly(True)
+        self.live_log.setFixedHeight(90)
+        self.live_log.setPlainText(
+            'SESSION LOG\n'
+            'E:/games/gtasa_skygfx_plus/\n'
+            '  gta_bridge_session.log\n'
+            '\n'
+            'waiting for first launch...\n'
+            'bridge overlay stats echo here')
+        self.live_log.setStyleSheet(
+            f"QPlainTextEdit{{background:{T.COLOR_RAISED}; color:{T.COLOR_TEXT_DIM};"
+            f"border:1px solid {T.COLOR_BORDER};"
+            f"border-left:3px solid {T.COLOR_WALKMAN_GREEN}; border-radius:2px;"
+            f"font-family:Consolas,'Courier New',monospace; font-size:10px;"
+            f"padding:6px;}}")
+        left.addWidget(self.live_log)
+
+        # ---- PLAY row: left-aligned directly under the session log ---------
         play_row = QHBoxLayout()
-        play_row.addStretch(1)
-        self.play_btn = ActionButton('▶  PLAY', accent=T.COLOR_YELLOW)
+        self.play_btn = ActionButton('\u25b6  PLAY', accent=T.COLOR_YELLOW)
         self.play_btn.setMinimumSize(180, 52)
         self.play_btn.clicked.connect(self._play)
         play_row.addWidget(self.play_btn)
+        play_row.addStretch(1)
         left.addLayout(play_row)
-        cols.addLayout(left, 3)
+        left.addStretch(1)
+        cols.addLayout(left, 4)
 
-        # ---- right rail: DLC select (front) + preview ----------------------
+        # ---- center: big square game preview render canvas ------------------
+        center = QVBoxLayout()
+        self.preview_canvas = _PreviewCanvas()
+        center.addWidget(self.preview_canvas)
+        center.addStretch(1)
+        cols.addLayout(center, 4)
+
+        # ---- right rail: DLC select (fills most) + compact PREVIEW tile -----
         right = QVBoxLayout()
         qm_box = QGroupBox('DLC')
         qm_box.setStyleSheet(
             f"QGroupBox{{color:{T.COLOR_TEXT_BRIGHT}; border:1px solid"
-            f" {T.COLOR_SELECT_BLUE}; border-radius:6px; margin-top:10px;"
+            f" {T.COLOR_WALKMAN_ORANGE}; border-radius:3px; margin-top:10px;"
             f" padding-top:6px; font-size:12px;}}")
         qv = QVBoxLayout(qm_box)
         qm_scroll = QScrollArea()
@@ -440,17 +542,17 @@ class PlayScreen(ScreenBase):
         qm_scroll.setWidget(qm_inner)
         qm_scroll.setMinimumWidth(300)
         qv.addWidget(qm_scroll)
-        right.addWidget(qm_box, 2)
+        right.addWidget(qm_box, 1)
 
         prev_box = QGroupBox('PREVIEW')
         prev_box.setStyleSheet(
-            f"QGroupBox{{color:{T.COLOR_VICE_CYAN}; border:1px solid"
-            f" {T.COLOR_DARK_GREEN}; border-radius:6px; margin-top:10px;"
+            f"QGroupBox{{color:{T.COLOR_WALKMAN_GREEN}; border:1px solid"
+            f" {T.COLOR_DARK_GREEN}; border-radius:3px; margin-top:10px;"
             f" padding-top:6px; font-size:12px;}}")
         pv = QVBoxLayout(prev_box)
         game_title = QLabel('GTA SAN ANDREAS')
         game_title.setStyleSheet(
-            f"color:{T.COLOR_TEXT_BRIGHT}; font-size:22px; font-weight:800;")
+            f"color:{T.COLOR_TEXT_BRIGHT}; font-size:15px; font-weight:800;")
         pv.addWidget(game_title)
         self.preview_path = body(str(launcher.game_path))
         self.preview_path.setWordWrap(True)
@@ -458,39 +560,9 @@ class PlayScreen(ScreenBase):
         self.preview_bridge = body('BRIDGE: idle')
         self.preview_bridge.setStyleSheet(f"color:{T.COLOR_TEXT_DIM};")
         pv.addWidget(self.preview_bridge)
-        pv.addStretch(1)
         right.addWidget(prev_box)
 
-        # ---- LIVE rail: perf-HUD echo, static placeholder (no timers/IO) ----
-        live_head = heading('LIVE', 12, T.COLOR_TEXT_DIM)
-        live_head.setStyleSheet(
-            f"color:{T.COLOR_TEXT_DIM}; font-size:11px; letter-spacing:1px;")
-        right.addWidget(live_head)
-        self.live_log = QPlainTextEdit()
-        self.live_log.setReadOnly(True)
-        self.live_log.setMaximumHeight(88)
-        self.live_log.setPlainText(
-            'SESSION LOG\n'
-            'E:/games/gtasa_skygfx_plus/\n'
-            '  gta_bridge_session.log\n'
-            '\n'
-            'waiting for first launch...\n'
-            'bridge overlay stats echo here')
-        self.live_log.setStyleSheet(
-            f"QPlainTextEdit{{background:{T.COLOR_RAISED}; color:{T.COLOR_TEXT_DIM};"
-            f"border:1px solid {T.COLOR_BORDER}; border-radius:8px;"
-            f"font-family:Consolas,'Courier New',monospace; font-size:10px;"
-            f"padding:6px;}}")
-        right.addWidget(self.live_log)
-        log_uri = Path('E:/games/gtasa_skygfx_plus/gta_bridge_session.log').as_uri()
-        open_log = QLabel(
-            f'<a href="{log_uri}" style="color:{T.COLOR_VICE_CYAN};'
-            f'text-decoration:none;">open session log \u2197</a>')
-        open_log.setCursor(Qt.PointingHandCursor)
-        open_log.setOpenExternalLinks(True)
-        right.addWidget(open_log)
-
-        cols.addLayout(right, 2)
+        cols.addLayout(right, 3)
         self.root.addLayout(cols)
         self._build_quick_mods()
 
@@ -550,12 +622,12 @@ class PlayScreen(ScreenBase):
                 btn.setStyleSheet(
                     f"QPushButton{{text-align:left; padding:4px 8px;"
                     f"background:{T.COLOR_PANEL_BG_LIGHT}; color:{T.COLOR_TEXT_BRIGHT};"
-                    f"border:1px solid {T.COLOR_VICE_CYAN}; border-radius:4px;}}")
+                    f"border:1px solid {T.COLOR_WALKMAN_GREEN}; border-radius:2px;}}")
             else:
                 btn.setStyleSheet(
                     f"QPushButton{{text-align:left; padding:4px 8px;"
                     f"background:transparent; color:{T.COLOR_TEXT_DIM};"
-                    f"border:1px solid {T.COLOR_DARK_GREEN}; border-radius:4px;}}")
+                    f"border:1px solid {T.COLOR_DARK_GREEN}; border-radius:2px;}}")
             if clash and not on:
                 btn.setEnabled(False)
                 btn.setToolTip(f'Clashes with {names.get(clash, clash)} — turn it off first.')
@@ -563,7 +635,148 @@ class PlayScreen(ScreenBase):
                 btn.setToolTip('Click to toggle this pack (deploys on next launch).')
                 btn.clicked.connect(lambda _, p=pid: self._toggle_pack(p))
             self.qm_layout.addWidget(btn)
+
+        # --- DLC preset rows (pack_state engine) ---
+        presets_dir = _data_dir() / 'dlc_presets'
+        if presets_dir.is_dir():
+            from managers.pack_state import load_presets, classify, install_available, PartState
+            presets = load_presets(str(presets_dir))
+            game_dir = str(self.launcher.game_path)
+            # cap at 30 presets
+            for preset in presets[:30]:
+                pid = preset.get('id', '')
+                title = preset.get('title', preset.get('name', pid))
+                try:
+                    ps = classify(preset, game_dir)
+                except Exception:
+                    continue
+                row = QWidget()
+                row.setStyleSheet('background: transparent;')
+                rh = QHBoxLayout(row)
+                rh.setContentsMargins(2, 1, 2, 1)
+                rh.setSpacing(4)
+                lbl = QLabel(title)
+                lbl.setWordWrap(True)
+                if ps.state == PartState.INSTALLED:
+                    lbl.setStyleSheet(
+                        f"color:{T.COLOR_TEXT_BRIGHT}; font-size:11px; padding:4px 8px;"
+                        f"border:1px solid {T.COLOR_WALKMAN_ORANGE}; border-radius:2px;")
+                    lbl.setToolTip('Installed — click to toggle')
+                    lbl.mousePressEvent = lambda ev, p=pid: self._toggle_pack(p)
+                elif ps.state == PartState.AVAILABLE:
+                    lbl.setStyleSheet(
+                        f"color:#c8b400; font-size:11px; padding:4px 8px;"
+                        f"border:1px solid {T.COLOR_BORDER}; border-radius:2px;")
+                    lbl.setToolTip('All parts available — select to install the DLC')
+                    lbl.mousePressEvent = lambda ev, p=preset, g=game_dir: (
+                        self._prompt_install_preset(p, g))
+                else:  # MISSING
+                    lbl.setStyleSheet(
+                        f"color:#6a6152; font-size:11px; padding:4px 8px;"
+                        f"border:1px solid {T.COLOR_BORDER}; border-radius:2px;")
+                    lbl.setToolTip('Files missing — click for details')
+                    lbl.mousePressEvent = lambda ev, p=preset: (
+                        self._show_missing_parts(p))
+                rh.addWidget(lbl, 1)
+                self.qm_layout.addWidget(row)
         self.qm_layout.addStretch(1)
+
+    def _prompt_install_preset(self, preset: dict, game_dir: str):
+        """Show install confirmation dialog for an AVAILABLE preset."""
+        title = preset.get('title', preset.get('name', preset.get('id', '?')))
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Install DLC')
+        dlg.setStyleSheet(f"background:{T.COLOR_BG};")
+        dlg.setFixedSize(360, 140)
+        lay = QVBoxLayout(dlg)
+        msg = QLabel(f'Install files for {title} now?')
+        msg.setStyleSheet(f"color:{T.COLOR_TEXT_BODY}; font-size:13px; padding:12px;")
+        msg.setWordWrap(True)
+        lay.addWidget(msg)
+        self._install_status = QLabel('')
+        self._install_status.setStyleSheet(
+            f"color:{T.COLOR_TEXT_DIM}; font-size:11px; padding:4px 12px;")
+        lay.addWidget(self._install_status)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        install_btn = QPushButton('INSTALL')
+        install_btn.setStyleSheet(
+            f"QPushButton{{background:{T.COLOR_WALKMAN_ORANGE}; color:{T.COLOR_ON_ACCENT};"
+            f"border:none; border-radius:2px; padding:6px 18px; font-size:12px;}}"
+            f"QPushButton:hover{{background:{T.COLOR_SUNSET_ORANGE};}}")
+        later_btn = QPushButton('LATER')
+        later_btn.setStyleSheet(
+            f"QPushButton{{background:{T.COLOR_PANEL_BG}; color:{T.COLOR_TEXT_DIM};"
+            f"border:1px solid {T.COLOR_BORDER}; border-radius:2px; padding:6px 18px;"
+            f"font-size:12px;}}"
+            f"QPushButton:hover{{background:{T.COLOR_HOVER_BG}; color:{T.COLOR_TEXT_BODY};}}")
+        install_btn.clicked.connect(lambda: self._do_install_preset(preset, game_dir, dlg))
+        later_btn.clicked.connect(dlg.reject)
+        btn_row.addWidget(install_btn)
+        btn_row.addWidget(later_btn)
+        lay.addLayout(btn_row)
+        dlg.exec_()
+
+    def _do_install_preset(self, preset: dict, game_dir: str, dlg: QDialog):
+        """Run install_available with progress labels."""
+        from managers.pack_state import install_available
+        self._install_status.setText('Installing...')
+        QApplication.processEvents()
+        try:
+            ok, lines = install_available(preset, game_dir)
+            if ok:
+                self._install_status.setText('INSTALLED')
+                QTimer.singleShot(300, dlg.accept)
+                QTimer.singleShot(350, self._build_quick_mods)
+            else:
+                self._install_status.setText('Install failed — see log')
+                QTimer.singleShot(2000, lambda: self._install_status.setText(''))
+        except Exception as e:
+            self._install_status.setText(f'Error: {e}')
+            QTimer.singleShot(2000, lambda: self._install_status.setText(''))
+
+    def _show_missing_parts(self, preset: dict):
+        """Show missing parts dialog for a MISSING preset."""
+        from managers.pack_state import classify, PartState
+        game_dir = str(self.launcher.game_path)
+        ps = classify(preset, game_dir)
+        title = preset.get('title', preset.get('name', preset.get('id', '?')))
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f'Missing files — {title}')
+        dlg.setStyleSheet(f"background:{T.COLOR_BG};")
+        dlg.setMinimumSize(420, 300)
+        lay = QVBoxLayout(dlg)
+        header = QLabel(f'Missing parts for {title}:')
+        header.setStyleSheet(f"color:{T.COLOR_TEXT_BRIGHT}; font-size:13px; padding:8px;")
+        lay.addWidget(header)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet('QScrollArea{border:none;background:transparent;}')
+        inner = QWidget()
+        inner.setStyleSheet('background:transparent;')
+        il = QVBoxLayout(inner)
+        il.setSpacing(2)
+        for pi in ps.missing_parts:
+            line = QLabel(
+                f"{pi.name}\n"
+                f"  get: {next((p.get('source_url','N/A') for p in (preset.get('parts') or []) if p.get('name')==pi.name), 'N/A')}\n"
+                f"  place: {pi.dest_rel}")
+            line.setStyleSheet(
+                f"color:{T.COLOR_TEXT_DIM}; font-size:11px; padding:4px 8px;"
+                f"border:1px solid {T.COLOR_BORDER}; border-radius:2px;")
+            line.setWordWrap(True)
+            il.addWidget(line)
+        il.addStretch(1)
+        scroll.setWidget(inner)
+        lay.addWidget(scroll, 1)
+        close_btn = QPushButton('CLOSE')
+        close_btn.setStyleSheet(
+            f"QPushButton{{background:{T.COLOR_PANEL_BG}; color:{T.COLOR_TEXT_BODY};"
+            f"border:1px solid {T.COLOR_BORDER}; border-radius:2px; padding:6px 18px;}}"
+            f"QPushButton:hover{{background:{T.COLOR_HOVER_BG};}}")
+        close_btn.clicked.connect(dlg.accept)
+        lay.addWidget(close_btn, 0, Qt.AlignCenter)
+        dlg.exec_()
 
     def _toggle_pack(self, pid: str):
         states = self._pack_states()
@@ -736,7 +949,7 @@ class LimitsScreen(ScreenBase):
         self.root.addWidget(heading('LIMIT ADJUSTER', 24))
 
         # Crysis-style roll-out preset menu (slides downward, scrollable)
-        self.preset_btn = ActionButton('PRESETS  \u25be', accent=T.COLOR_VICE_CYAN)
+        self.preset_btn = ActionButton('PRESETS  \u25be', accent=T.COLOR_WALKMAN_GREEN)
         self.preset_btn.setFixedWidth(360)
         self.preset_btn.clicked.connect(self._toggle_preset_menu)
         self.root.addWidget(self.preset_btn, 0, Qt.AlignLeft)
@@ -751,8 +964,8 @@ class LimitsScreen(ScreenBase):
             f"QScrollArea{{border:1px solid {T.COLOR_DARK_GREEN};"
             f"background:{T.COLOR_PANEL_BG};}}"
             f"QScrollBar:vertical{{width:8px;background:{T.COLOR_PANEL_BG};}}"
-            f"QScrollBar::handle:vertical{{background:{T.COLOR_SELECT_BLUE};"
-            f"min-height:30px;border-radius:4px;}}")
+            f"QScrollBar::handle:vertical{{background:{T.COLOR_WALKMAN_ORANGE};"
+            f"min-height:30px;border-radius:2px;}}")
         menu_inner = QWidget()
         menu_inner.setStyleSheet(f"background:{T.COLOR_PANEL_BG};")
         menu_lay = QVBoxLayout(menu_inner)
@@ -764,8 +977,8 @@ class LimitsScreen(ScreenBase):
             mb.setStyleSheet(
                 f"QPushButton{{color:{T.COLOR_TEXT_BODY};text-align:left;"
                 f"padding:6px 10px;border:none;background:transparent;font-size:12px;}}"
-                f"QPushButton:hover{{background:{T.COLOR_SELECT_BLUE};"
-                f"color:{T.COLOR_TEXT_BODY};}}")
+                f"QPushButton:hover{{background:{T.COLOR_WALKMAN_GREEN};"
+                f"color:{T.COLOR_ON_ACCENT};}}")
             mb.clicked.connect(lambda _, n=name: self._pick_preset(n))
             menu_lay.addWidget(mb)
         menu_lay.addStretch(1)
@@ -789,8 +1002,8 @@ class LimitsScreen(ScreenBase):
             f"QListWidget{{background:{T.COLOR_PANEL_BG};color:{T.COLOR_TEXT_BODY};"
             f"border:1px solid {T.COLOR_DARK_GREEN};font-size:13px;outline:none;}}"
             f"QListWidget::item{{padding:8px 12px;}}"
-            f"QListWidget::item:selected{{background:{T.COLOR_SELECT_BLUE};"
-            f"color:{T.COLOR_TEXT_BODY};}}"
+            f"QListWidget::item:selected{{background:{T.COLOR_WALKMAN_ORANGE};"
+            f"color:{T.COLOR_ON_ACCENT};}}"
             f"QListWidget::item:hover{{background:{T.COLOR_PANEL_BG_LIGHT};}}")
         left_col.addWidget(self.cat_list, 1)
         # RESET TO DEFAULTS row (two-step inline confirmation)
@@ -801,7 +1014,7 @@ class LimitsScreen(ScreenBase):
         self.reset_btn.setStyleSheet(
             f"QPushButton{{background:{T.COLOR_PANEL_BG_LIGHT};"
             f"color:{T.COLOR_TEXT_DIM};"
-            f"border:1px solid {T.COLOR_BORDER};border-radius:6px;"
+            f"border:1px solid {T.COLOR_BORDER};border-radius:2px;"
             f"padding:6px 10px;font-size:11px;}}"
             f"QPushButton:hover{{border-color:{T.COLOR_SUNSET_ORANGE};"
             f"color:{T.COLOR_SUNSET_ORANGE};}}")
@@ -823,8 +1036,8 @@ class LimitsScreen(ScreenBase):
             f"QScrollArea{{border:1px solid {T.COLOR_DARK_GREEN};"
             f"background:{T.COLOR_PANEL_BG};}}"
             f"QScrollBar:vertical{{width:8px;background:{T.COLOR_PANEL_BG};}}"
-            f"QScrollBar::handle:vertical{{background:{T.COLOR_SELECT_BLUE};"
-            f"min-height:30px;border-radius:4px;}}")
+            f"QScrollBar::handle:vertical{{background:{T.COLOR_WALKMAN_ORANGE};"
+            f"min-height:30px;border-radius:2px;}}")
         self.rows_inner = QWidget()
         self.rows_inner.setStyleSheet(f"background:{T.COLOR_PANEL_BG};")
         self.rows_lay = QVBoxLayout(self.rows_inner)
@@ -992,7 +1205,7 @@ class LimitsScreen(ScreenBase):
             from PyQt5.QtCore import QEvent
             if event.type() == QEvent.Enter:
                 obj.setStyleSheet(
-                    f"background:{T.COLOR_SELECT_BLUE};")
+                    f"background:{T.COLOR_WALKMAN_GREEN};")
                 self.desc_bar.setText(obj.limit_tip)
             elif event.type() == QEvent.Leave:
                 obj.setStyleSheet('background: transparent;')
@@ -1286,7 +1499,7 @@ class ModsScreen(ScreenBase):
         restore.clicked.connect(self._restore_originals)
         scan = ActionButton('SCAN TXDS', accent=T.COLOR_LCS_AMBER)
         scan.clicked.connect(self._scan_txds)
-        fixall = ActionButton('FIX ALL TXDS', accent=T.COLOR_VICE_CYAN)
+        fixall = ActionButton('FIX ALL TXDS', accent=T.COLOR_WALKMAN_GREEN)
         fixall.clicked.connect(self._fix_all_txds)
         for b in (inst, uninst, backup, restore, scan, fixall):
             btns.addWidget(b)
@@ -1301,7 +1514,7 @@ class ModsScreen(ScreenBase):
         self.listw.currentRowChanged.connect(self._show_details)
         left.addWidget(self.listw, 1)
 
-        ml_head = heading('MOD LOADER FOLDERS', 13, T.COLOR_VICE_CYAN)
+        ml_head = heading('MOD LOADER FOLDERS', 13, T.COLOR_WALKMAN_GREEN)
         left.addWidget(ml_head)
         pack_row = QHBoxLayout()
         pack_row.addWidget(body('pack'))
@@ -1342,7 +1555,7 @@ class ModsScreen(ScreenBase):
 
         # right column: details / preview
         right = QVBoxLayout()
-        right.addWidget(heading('PREVIEW', 16, T.COLOR_VICE_CYAN))
+        right.addWidget(heading('PREVIEW', 16, T.COLOR_WALKMAN_GREEN))
         self.details = QTextEdit()
         self.details.setReadOnly(True)
         self.details.setStyleSheet(
@@ -1353,7 +1566,7 @@ class ModsScreen(ScreenBase):
         ari = ActionButton('OPEN IN ARIANE', accent=T.COLOR_LCS_AMBER)
         ari.clicked.connect(self._open_ariane)
         prev_row.addWidget(ari)
-        etx = ActionButton('EDIT TXD', accent=T.COLOR_VICE_CYAN)
+        etx = ActionButton('EDIT TXD', accent=T.COLOR_WALKMAN_GREEN)
         etx.clicked.connect(self._edit_txd)
         prev_row.addWidget(etx)
         prev_row.addStretch(1)
@@ -2118,7 +2331,7 @@ class TxdEditorScreen(ScreenBase):
         mid.addWidget(self.viewport, 1)
 
         props = QVBoxLayout()
-        props.addWidget(heading('PROPERTIES', 14, T.COLOR_VICE_CYAN))
+        props.addWidget(heading('PROPERTIES', 14, T.COLOR_WALKMAN_GREEN))
         self.p_name = QLineEdit()
         self.p_mask = QLineEdit()
         self.p_dims = body('-')
@@ -2186,7 +2399,8 @@ class TxdEditorScreen(ScreenBase):
             f"QMenuBar::item:selected {{ background:{T.COLOR_DARK_GREEN}; }}"
             f"QMenu {{ background:{T.COLOR_PANEL_BG_LIGHT}; color:{T.COLOR_TEXT_BODY};"
             f"border:1px solid {T.COLOR_DARK_GREEN}; }}"
-            f"QMenu::item:selected {{ background:{T.COLOR_SELECT_BLUE}; }}")
+            f"QMenu::item:selected {{ background:{T.COLOR_WALKMAN_ORANGE};"
+            f" color:{T.COLOR_ON_ACCENT}; }}")
 
         m_file = mb.addMenu('File')
         for label, slot in (('New', self._new), ('Open…', self._open),
@@ -2681,6 +2895,45 @@ class InstallerScreen(ScreenBase):
         self.wizard.raise_()
 
 
+class WizardScreen(ScreenBase):
+    """WIZARD mode page: guide panel + modal launch button."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.wizard = None
+        self.root.addWidget(heading('RUN INSTALL GUIDE', 24))
+        steps = ("This guided wizard will set up a standalone\n"
+                 "GTA San Andreas Stories 1987 installation.\n\n"
+                 "1. Choose mod source (download or existing files)\n"
+                 "2. Locate your vanilla San Andreas install\n"
+                 "3. Pick destination for the standalone install\n"
+                 "4. Hash-check gta_sa.exe (+ optional NO-CD)\n"
+                 "5. Copy vanilla files (original untouched)\n"
+                 "6. Zip-backup the fresh clone\n"
+                 "7. Download main mod + prerequisites\n"
+                 "8. Install everything in the right order")
+        box = QFrame()
+        box.setStyleSheet(f"background:{T.COLOR_PANEL_BG_LIGHT};"
+                          f"border:1px solid {T.COLOR_DARK_GREEN};")
+        bl = QVBoxLayout(box)
+        bl.addWidget(body(steps))
+        self.root.addWidget(box)
+        self.root.addStretch(1)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        go = ActionButton('LAUNCH WIZARD', accent=T.COLOR_SUNSET_ORANGE)
+        go.setMinimumSize(200, 48)
+        go.clicked.connect(self._launch)
+        row.addWidget(go)
+        self.root.addLayout(row)
+
+    def _launch(self):
+        from installer_src.ui.wizard import InstallerWizard  # lazy import
+        wiz = InstallerWizard(self)
+        wiz.setWindowModality(Qt.WindowModal)
+        wiz.exec_()
+
+
 # =============================================================================
 # Main window
 # =============================================================================
@@ -2701,39 +2954,115 @@ class MainWindow(QMainWindow):
         root.setSpacing(0)
 
         # sidebar
-        side = QWidget()
-        side.setFixedWidth(210)
-        side.setStyleSheet(f"background: {T.COLOR_BG}; "
-                           f"border-right: 1px solid {T.COLOR_BORDER};")
-        sv = QVBoxLayout(side)
-        sv.setContentsMargins(10, 18, 10, 14)
+        self.side = QWidget()
+        self.side.setFixedWidth(210)
+        self.side.setStyleSheet(f"background: {T.COLOR_BG}; "
+                                f"border-right: 1px solid {T.COLOR_BORDER};")
+        self.sv = QVBoxLayout(self.side)
+        self.sv.setContentsMargins(10, 18, 10, 14)
         logo = heading('GTA BRIDGE', 20)
         sub = body('LAUNCHER SUITE', dim=True)
-        sv.addWidget(logo)
-        sv.addWidget(sub)
-        sv.addSpacing(18)
-        self.nav = QStackedWidget()  # placeholder to keep refs
+        self.sv.addWidget(logo)
+        self.sv.addWidget(sub)
+        self.sv.addSpacing(18)
         self.nav_buttons: list[NavButton] = []
         self.screens = QStackedWidget()
 
-        specs = [('PLAY', lambda: PlayScreen(launcher)),
-                 ('LIMITS', lambda: LimitsScreen(launcher)),
-                 ('MODS', lambda: ModsScreen(launcher)),
-                 ('TXD EDITOR', lambda: TxdEditorScreen(launcher)),
-                 ('INSPECTOR', lambda: InspectorScreen(launcher)),
-                 ('INSTALLER', lambda: InstallerScreen())]
-        for i, (name, factory) in enumerate(specs):
-            b = NavButton(name)
-            b.clicked.connect(lambda _, ix=i: self._nav(ix))
-            sv.addWidget(b)
-            self.nav_buttons.append(b)
+        # Create all screens (indices: 0=PLAY,1=LIMITS,2=MODS,3=TXD EDITOR,
+        # 4=INSPECTOR,5=INSTALLER,6=WIZARD)
+        all_specs = [('PLAY', lambda: PlayScreen(launcher)),
+                     ('LIMITS', lambda: LimitsScreen(launcher)),
+                     ('MODS', lambda: ModsScreen(launcher)),
+                     ('TXD EDITOR', lambda: TxdEditorScreen(launcher)),
+                     ('INSPECTOR', lambda: InspectorScreen(launcher)),
+                     ('INSTALLER', lambda: InstallerScreen()),
+                     ('WIZARD', lambda: WizardScreen())]
+        self._screen_specs = all_specs
+        for _name, factory in all_specs:
             self.screens.addWidget(factory())
-        sv.addStretch(1)
+
+        # nav button container (inserted after subtitle, before stretch)
+        self._nav_container = QWidget()
+        self._nav_layout = QVBoxLayout(self._nav_container)
+        self._nav_layout.setContentsMargins(0, 0, 0, 0)
+        self._nav_layout.setSpacing(0)
+        self.sv.addWidget(self._nav_container)
+
+        # mode switcher row at bottom of sidebar
+        self.sv.addStretch(1)
+        self._mode_row = QHBoxLayout()
+        self._mode_row.setSpacing(3)
+        self._mode_btns: dict[str, QPushButton] = {}
+        for label, val in [('WIZARD', 'wizard'), ('SIMPLE', 'simple'), ('ADV', 'adv')]:
+            mb = QPushButton(label)
+            mb.setCheckable(True)
+            mb.setCursor(Qt.PointingHandCursor)
+            mb.setMinimumHeight(28)
+            mb.setStyleSheet(f"""
+                QPushButton {{
+                    background: {T.COLOR_PANEL_BG}; color: {T.COLOR_TEXT_DIM};
+                    border: 1px solid {T.COLOR_BORDER}; border-radius: 2px;
+                    font-size: 10px; padding: 2px 4px;
+                }}
+                QPushButton:hover {{
+                    background: {T.COLOR_HOVER_BG}; color: {T.COLOR_TEXT_BODY};
+                }}
+                QPushButton:checked {{
+                    background: {T.COLOR_WALKMAN_ORANGE}; color: {T.COLOR_ON_ACCENT};
+                }}
+            """)
+            mb.clicked.connect(lambda _, v=val: self._set_mode(v))
+            self._mode_btns[val] = mb
+            self._mode_row.addWidget(mb)
+        self.sv.addLayout(self._mode_row)
+        self._mode_hint = body('', dim=True)
+        self._mode_hint.setStyleSheet(
+            f"color:{T.COLOR_TEXT_DIM}; font-size:9px; padding:0; margin:0;")
+        self.sv.addWidget(self._mode_hint)
         ver = body('v2.0.0 — bridge suite', dim=True)
-        sv.addWidget(ver)
-        root.addWidget(side)
+        self.sv.addWidget(ver)
+        root.addWidget(self.side)
         root.addWidget(self.screens, 1)
-        self._nav(0)
+
+        # apply persisted mode
+        mode = launcher.config_manager.get_setting('ui.mode', 'simple')
+        self._set_mode(mode, initial=True)
+
+    def _set_mode(self, mode: str, initial: bool = False):
+        """Switch UI mode and persist."""
+        self.launcher.config_manager.set_setting('ui.mode', mode)
+        for val, btn in self._mode_btns.items():
+            btn.setChecked(val == mode)
+        hints = {'wizard': 'wizard mode', 'simple': '', 'adv': 'advanced'}
+        self._mode_hint.setText(hints.get(mode, ''))
+        self._rebuild_sidebar(mode)
+        if not initial:
+            self._nav(0)
+
+    def _rebuild_sidebar(self, mode: str):
+        """Clear and rebuild nav buttons based on mode."""
+        # clear existing nav buttons
+        while self._nav_layout.count():
+            it = self._nav_layout.takeAt(0)
+            w = it.widget()
+            if w:
+                w.deleteLater()
+        self.nav_buttons.clear()
+
+        # define visible screens per mode
+        if mode == 'wizard':
+            indices = [0, 6]  # PLAY, WIZARD
+        elif mode == 'adv':
+            indices = [0, 1, 2, 3, 4, 5]  # all except WIZARD
+        else:  # simple
+            indices = [0, 1, 2, 3, 4, 5]  # all except WIZARD
+
+        for ix in indices:
+            name = self._screen_specs[ix][0]
+            b = NavButton(name)
+            b.clicked.connect(lambda _, i=ix: self._nav(i))
+            self._nav_layout.addWidget(b)
+            self.nav_buttons.append(b)
 
     def _nav(self, ix: int):
         for j, b in enumerate(self.nav_buttons):
@@ -2794,6 +3123,10 @@ def _main_inner():
                            config_path=str(F('config')))
     app = QApplication(sys.argv)
     _resolve_display_font(app)
+    # Vista-era typography: Segoe UI 9pt with the default (ClearType) rasterizer.
+    _ui_font = QFont('Segoe UI', 9)
+    _ui_font.setStyleStrategy(QFont.PreferDefault)
+    app.setFont(_ui_font)
     app.setStyleSheet(app_qss())
     win = MainWindow(launcher)
     win.show()

@@ -1,8 +1,8 @@
 """Archive extractor supporting .zip, .rar, and .7z.
 
     .zip  -> zipfile (stdlib)
-    .7z   -> py7zr
-    .rar  -> rarfile (needs unrar.exe or 7z.exe on PATH on Windows)
+    .7z   -> py7zr (optional; graceful fallback if missing)
+    .rar  -> rarfile (optional; needs unrar.exe or 7z.exe on PATH on Windows)
 
 All extracted files land in a per-mod subfolder under the shared cache so
 re-installs skip extraction. The wizard then copies/merges those files
@@ -21,6 +21,21 @@ from . import cache
 log = logging.getLogger(__name__)
 
 ProgressCb = Callable[[int, int], None]   # (current, total) — best-effort
+
+# Graceful optional dependency tracking
+_HAS_PY7ZR: bool = False
+_HAS_RARFILE: bool = False
+try:
+    import py7zr  # type: ignore  # noqa: F401
+    _HAS_PY7ZR = True
+except ImportError:
+    log.info("py7zr not installed — .7z extraction disabled.")
+
+try:
+    import rarfile  # type: ignore  # noqa: F401
+    _HAS_RARFILE = True
+except ImportError:
+    log.info("rarfile not installed — .rar extraction disabled.")
 
 
 # ----------------------------------------------------------------------
@@ -44,8 +59,18 @@ def extract(
     if ext == ".zip":
         _extract_zip(archive_path, dest_dir, progress)
     elif ext == ".7z":
+        if not _HAS_PY7ZR:
+            raise RuntimeError(
+                "py7zr is not installed — cannot extract .7z files. "
+                "Install it with: pip install py7zr"
+            )
         _extract_7z(archive_path, dest_dir, progress)
     elif ext == ".rar":
+        if not _HAS_RARFILE:
+            raise RuntimeError(
+                "rarfile is not installed — cannot extract .rar files. "
+                "Install it with: pip install rarfile"
+            )
         _extract_rar(archive_path, dest_dir, progress)
     else:
         raise ValueError(f"Unsupported archive type: {ext}")
@@ -54,7 +79,12 @@ def extract(
 
 
 def supported_extensions() -> tuple[str, ...]:
-    return (".zip", ".rar", ".7z")
+    exts = [".zip"]
+    if _HAS_PY7ZR:
+        exts.append(".7z")
+    if _HAS_RARFILE:
+        exts.append(".rar")
+    return tuple(exts)
 
 
 def is_archive(path: str) -> bool:
