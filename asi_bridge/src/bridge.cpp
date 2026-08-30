@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdarg>
+#include <cmath>
 
 // injector + pool struct
 #include "injector/injector.hpp"
@@ -158,22 +159,63 @@ static float    g_lastScaleWritten = 0.0f;
 static float    g_lastDir = 0.0f;
 static uint32_t g_lastDirChangeTick = 0;
 static uint32_t g_lastWriteTick = 0;
+// ---- instrumentation state (exposed from DynamicRenderScale to DrawStatsBlock) ----
+static float    g_lodTarget     = 1.2f;    // pre-clamp target this frame (headroom-derived)
+// ---- camera-velocity tracking for speed-scaled LOD ----
+static float    g_camSpeed    = 0.0f;      // EMA-smoothed camera speed (m/s)
+static float    g_prevCamX    = 0.0f;
+static float    g_prevCamY    = 0.0f;
+static bool     g_camLayoutOk = false;     // true after first sane camera-position read
+static uint32_t g_camLastTick = 0;
 static const float SLEW_PER_SEC = 0.35f;   // max scale units per second
 static const float DEADBAND     = 0.15f;   // ignore small headroom wobble
 static const uint32_t HOLD_MS   = 2500;    // min hold before reversing direction
 static void DynamicRenderScale() {
+    // ---- camera-velocity tracking (always runs, even if dynamic LOD disabled) ----
+    uint32_t now = GetTickCount();
+    uint32_t camDt = now - g_camLastTick;
+    g_camLastTick = now;
+    uint32_t rawX=0, rawY=0;
+    if(safeReadU32(0xB6F030, rawX) && safeReadU32(0xB6F034, rawY)) {
+        float fx = *(float*)&rawX;
+        float fy = *(float*)&rawY;
+        // SA world: valid coords typically within [-3000, 3000]; use generous sanity
+        if(fx > -10000.0f && fx < 10000.0f && fy > -10000.0f && fy < 10000.0f) {
+            if(g_camLastTick > 0 && camDt > 0 && camDt < 500) {
+                float dx = fx - g_prevCamX;
+                float dy = fy - g_prevCamY;
+                float dist = sqrtf(dx*dx + dy*dy);
+                float dtSec = (float)camDt / 1000.0f;
+                float speed = dist / dtSec;
+                if(speed < 200.0f) { // ~720 km/h sanity ceiling
+                    g_camLayoutOk = true;
+                    g_camSpeed = (g_camSpeed == 0.0f) ? speed : g_camSpeed + (speed - g_camSpeed) * 0.1f;
+                }
+            }
+            g_prevCamX = fx;
+            g_prevCamY = fy;
+        }
+    }
     if(!g_dynamicLod) return; // kill-switch: stock render distance, no adaptation
     int u=0,m=0; double head=0.0; int n=0;
     if(ReadPoolUsage(0xB74498, u, m) && m>0){ head += 1.0-(double)u/(double)m; ++n; } // Buildings
     if(ReadPoolUsage(0xB7449C, u, m) && m>0){ head += 1.0-(double)u/(double)m; ++n; } // Objects
     if(!n) return;
     head /= (double)n;
-    uint32_t now = GetTickCount();
     // smooth headroom (EMA) so per-frame streaming noise doesn't pass through
     g_headEma = (g_headEma < 0.0) ? head : g_headEma + (head - g_headEma) * 0.04;
     // base 1.2 (stock default) scaled by smoothed headroom up to 1.2*max_scale
     float target = (float)(1.2 * (1.0 + g_headEma * (double)(g_maxLodScale-1.0f)));
     if(target < 1.2f) target = 1.2f;
+    g_lodTarget = target; // expose pre-velocity pre-clamp target for HUD
+
+    // velocity-scaled LOD: push scale up when moving fast (distant LODs visible)
+    if(g_camLayoutOk) {
+        float speedFactor = g_camSpeed * 0.05f;
+        if(speedFactor > 1.2f) speedFactor = 1.2f;
+        target += speedFactor;
+    }
+
     float cap = 1.2f * g_maxLodScale * GovernorLodFactor();
     if(target > cap) target = cap;
     float cur = g_lastScaleWritten > 0.0f ? g_lastScaleWritten : target;
@@ -516,6 +558,15 @@ static void DrawStatsBlock(bool full){
     StatsText(b,sx,y,sc*1.2f,&fc); y+=lh*1.6f;
     if(s_minFps<=s_maxFps) { sprintf(b,"MIN %5.1f   AVG %5.1f   MAX %5.1f",s_minFps,avfps,s_maxFps); StatsText(b,sx,y,sc,nullptr); y+=lh; }
     if(full){
+        {   // LOD instrumentation line
+            float lodCur = 0.0f;
+            safeReadFloat(0x8CD800, lodCur);
+            char spdBuf[16];
+            if(g_camLayoutOk) sprintf(spdBuf, "%.1f", g_camSpeed);
+            else spdBuf[0]='-', spdBuf[1]='\0';
+            sprintf(b, "LOD %.2f tgt=%.2f gov=%.2f spd=%s", lodCur, g_lodTarget, GovernorLodFactor(), spdBuf);
+            StatsText(b,sx,y,sc,nullptr); y+=lh;
+        }
         char sp[62]; DrawSparkline(sp); StatsText(sp,sx,y,sc*0.82f,&COL_GREEN); y+=lh;
         int au,u; if(GetMemUsage(au,u)){ sprintf(b,"STREAMING %d MB used / %d avail",u,au); StatsText(b,sx,y,sc,nullptr); y+=lh; }
         int tu,tm; if(PoolUsageByName("textures",tu,tm)){ sprintf(b,"TEXTURES  %d / %d",tu,tm); StatsText(b,sx,y,sc,nullptr); y+=lh; }
