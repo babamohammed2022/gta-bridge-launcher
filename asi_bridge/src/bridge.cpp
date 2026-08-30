@@ -151,18 +151,43 @@ static void ApplyVegetationPatches() {
 // (per-weather/hour), interpolated by CTimeCycle — no safe single float.
 static float g_maxLodScale = 4.0f;
 static float GovernorLodFactor(); // Streaming Supervisor below
+// ---- anti-flicker control-loop damping (player-idle LOD oscillation fix) ----
+static double   g_headEma = -1.0;
+static float    g_lastScaleWritten = 0.0f;
+static float    g_lastDir = 0.0f;
+static uint32_t g_lastDirChangeTick = 0;
+static uint32_t g_lastWriteTick = 0;
+static const float SLEW_PER_SEC = 0.35f;   // max scale units per second
+static const float DEADBAND     = 0.15f;   // ignore small headroom wobble
+static const uint32_t HOLD_MS   = 2500;    // min hold before reversing direction
 static void DynamicRenderScale() {
+    if(!g_dynamicLod) return; // kill-switch: stock render distance, no adaptation
     int u=0,m=0; double head=0.0; int n=0;
     if(ReadPoolUsage(0xB74498, u, m) && m>0){ head += 1.0-(double)u/(double)m; ++n; } // Buildings
     if(ReadPoolUsage(0xB7449C, u, m) && m>0){ head += 1.0-(double)u/(double)m; ++n; } // Objects
     if(!n) return;
     head /= (double)n;
-    // base 1.2 (stock default) scaled by headroom up to 1.2*max_scale
-    float scale = (float)(1.2 * (1.0 + head * (double)(g_maxLodScale-1.0f)));
-    if(scale < 1.2f) scale = 1.2f;
+    uint32_t now = GetTickCount();
+    // smooth headroom (EMA) so per-frame streaming noise doesn't pass through
+    g_headEma = (g_headEma < 0.0) ? head : g_headEma + (head - g_headEma) * 0.04;
+    // base 1.2 (stock default) scaled by smoothed headroom up to 1.2*max_scale
+    float target = (float)(1.2 * (1.0 + g_headEma * (double)(g_maxLodScale-1.0f)));
+    if(target < 1.2f) target = 1.2f;
     float cap = 1.2f * g_maxLodScale * GovernorLodFactor();
-    if(scale > cap) scale = cap;
+    if(target > cap) target = cap;
+    float cur = g_lastScaleWritten > 0.0f ? g_lastScaleWritten : target;
+    float delta = target - cur;
+    if(fabs(delta) < DEADBAND) return;                                    // deadband
+    float dir = delta > 0.0f ? 1.0f : -1.0f;
+    if(dir != g_lastDir && (now - g_lastDirChangeTick) < HOLD_MS) return; // hold before reversing
+    if(dir != g_lastDir){ g_lastDir = dir; g_lastDirChangeTick = now; }
+    if(now - g_lastWriteTick < 200) return;                               // max 5 writes/sec
+    float step = SLEW_PER_SEC * (float)(now - g_lastWriteTick) / 1000.0f;
+    if(step > fabs(delta)) step = fabs(delta);
+    float scale = cur + dir * step;
     injector::WriteMemory<float>(injector::memory_pointer(0x8CD800), scale, true);
+    g_lastScaleWritten = scale;
+    g_lastWriteTick = now;
 }
 
 // -------- Streaming Supervisor v1 (PS2-throttle removal) --------
@@ -176,6 +201,7 @@ static void DynamicRenderScale() {
 // models under memory pressure so load/unload tracks actual demand.
 static bool GetMemUsage(int &availMb, int &usedMb); // fwd
 static bool g_streamGovernor = true;
+static bool g_dynamicLod = true; // [BRIDGE] DYNAMIC_LOD=0 freezes lodDistScale at stock 1.2 (user kill-switch)
 static float g_pressSoft = 0.85f, g_pressHard = 0.93f;
 static float g_fpsMin = 40.0f, g_fpsMax = 55.0f;
 static float g_fpsAvg = 60.0f;
@@ -250,6 +276,7 @@ static void ApplyBridgeIni(const std::string &iniPath) {
         if(k=="DEBUGTEXTKEY"){ try{ vkBridgeText=std::stoi(v,nullptr,0);}catch(...){} }
         else if(k=="STREAMING_MEM_MB"){ try{ g_streamingMemMb=(uint32_t)std::stoul(v);}catch(...){} }
         else if(k=="MAX_LOD_SCALE"){ try{ g_maxLodScale=std::stof(v);}catch(...){} }
+        else if(k=="DYNAMIC_LOD"){ g_dynamicLod = (v!="0"); }
         else if(k=="VEGETATION_BOOST"){ g_vegetationBoost = (v=="1"||v=="true"||v=="yes"); }
         else if(k=="STREAM_GOVERNOR"){ g_streamGovernor = (v=="1"||v=="true"||v=="yes"); }
         else if(k=="PRESS_SOFT"){ try{ g_pressSoft=std::stof(v);}catch(...){} }
