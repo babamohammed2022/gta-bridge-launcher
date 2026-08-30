@@ -150,6 +150,7 @@ static void ApplyVegetationPatches() {
 // Far clip NOT patched: real far clip = m_fFarClip short table at 0xB7B1D0
 // (per-weather/hour), interpolated by CTimeCycle — no safe single float.
 static float g_maxLodScale = 4.0f;
+static bool  g_dynamicLod = true; // [BRIDGE] DYNAMIC_LOD=0 freezes lodDistScale at stock 1.2 (user kill-switch)
 static float GovernorLodFactor(); // Streaming Supervisor below
 // ---- anti-flicker control-loop damping (player-idle LOD oscillation fix) ----
 static double   g_headEma = -1.0;
@@ -201,7 +202,6 @@ static void DynamicRenderScale() {
 // models under memory pressure so load/unload tracks actual demand.
 static bool GetMemUsage(int &availMb, int &usedMb); // fwd
 static bool g_streamGovernor = true;
-static bool g_dynamicLod = true; // [BRIDGE] DYNAMIC_LOD=0 freezes lodDistScale at stock 1.2 (user kill-switch)
 static float g_pressSoft = 0.85f, g_pressHard = 0.93f;
 static float g_fpsMin = 40.0f, g_fpsMax = 55.0f;
 static float g_fpsAvg = 60.0f;
