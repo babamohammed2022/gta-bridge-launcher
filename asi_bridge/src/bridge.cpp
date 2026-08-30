@@ -167,6 +167,18 @@ static float    g_prevCamX    = 0.0f;
 static float    g_prevCamY    = 0.0f;
 static bool     g_camLayoutOk = false;     // true after first sane camera-position read
 static uint32_t g_camLastTick = 0;
+// ---- zone/sector tracking ----
+static float    g_playerPosX      = 0.0f;
+static float    g_playerPosY      = 0.0f;
+static float    g_camPosZ         = 0.0f;
+static int      g_playerSectorX   = 0;
+static int      g_playerSectorY   = 0;
+static int      g_prevSectorX     = -999;
+static int      g_prevSectorY     = -999;
+static uint32_t g_lastZoneLogTick = 0;
+// ---- BigBuildings speed-valve hysteresis ----
+static uint32_t g_lastBbValveTick = 0;
+static bool     g_camSpeedInsane  = false;
 static const float SLEW_PER_SEC = 0.35f;   // max scale units per second
 static const float DEADBAND     = 0.15f;   // ignore small headroom wobble
 static const uint32_t HOLD_MS   = 2500;    // min hold before reversing direction
@@ -175,19 +187,30 @@ static void DynamicRenderScale() {
     uint32_t now = GetTickCount();
     uint32_t camDt = now - g_camLastTick;
     g_camLastTick = now;
-    uint32_t rawX=0, rawY=0;
-    if(safeReadU32(0xB6F030, rawX) && safeReadU32(0xB6F034, rawY)) {
+    uint32_t rawX=0, rawY=0, rawZ=0;
+    if(safeReadU32(0xB6F030, rawX) && safeReadU32(0xB6F034, rawY) && safeReadU32(0xB6F038, rawZ)) {
         float fx = *(float*)&rawX;
         float fy = *(float*)&rawY;
+        float fz = *(float*)&rawZ;
+        // update zone/sector state (always, for HUD + log)
+        g_playerPosX = fx;
+        g_playerPosY = fy;
+        g_camPosZ    = fz;
+        g_playerSectorX = (int)floorf(fx / 96.0f);
+        g_playerSectorY = (int)floorf(fy / 96.0f);
         // SA world: valid coords typically within [-3000, 3000]; use generous sanity
         if(fx > -10000.0f && fx < 10000.0f && fy > -10000.0f && fy < 10000.0f) {
-            if(g_camLastTick > 0 && camDt > 0 && camDt < 500) {
+            if(camDt > 0 && camDt < 500) {
                 float dx = fx - g_prevCamX;
                 float dy = fy - g_prevCamY;
                 float dist = sqrtf(dx*dx + dy*dy);
                 float dtSec = (float)camDt / 1000.0f;
                 float speed = dist / dtSec;
-                if(speed < 200.0f) { // ~720 km/h sanity ceiling
+                if(speed > 1000.0f) {
+                    // insane reading: disable velocity term, flag for "spd=?" display
+                    g_camLayoutOk = false;
+                    g_camSpeedInsane = true;
+                } else if(speed < 200.0f) { // ~720 km/h sanity ceiling
                     g_camLayoutOk = true;
                     g_camSpeed = (g_camSpeed == 0.0f) ? speed : g_camSpeed + (speed - g_camSpeed) * 0.1f;
                 }
@@ -218,6 +241,9 @@ static void DynamicRenderScale() {
 
     float cap = 1.2f * g_maxLodScale * GovernorLodFactor();
     if(target > cap) target = cap;
+    // fade-band floor: RAGE LODTYPES_FADE_DIST approximation — prevent lodDistScale
+    // from dropping below 1.6 so entities load ~20m past stock swap distance (no snap-out)
+    if(target < 1.3f) target = 1.3f;
     float cur = g_lastScaleWritten > 0.0f ? g_lastScaleWritten : target;
     float delta = target - cur;
     if(fabs(delta) < DEADBAND) return;                                    // deadband
@@ -245,6 +271,7 @@ static void DynamicRenderScale() {
 static bool GetMemUsage(int &availMb, int &usedMb); // fwd
 static void SessionLogWrite(const char* fmt, ...);   // fwd (defined below, used by pump logging)
 static bool g_streamGovernor = true;
+static volatile bool g_shutdown = false;  // main decl — also used in DllMain/pipe thread
 static float g_pressSoft = 0.85f, g_pressHard = 0.93f;
 static float g_fpsMin = 40.0f, g_fpsMax = 55.0f;
 static float g_fpsAvg = 60.0f;
@@ -280,7 +307,7 @@ static void StreamingSupervisor() {
         g_fpsAvg = 1000.0f * (float)g_fpsFrames / (float)(now - g_fpsTick);
         g_fpsFrames = 0; g_fpsTick = now;
     }
-    if(!g_streamGovernor) return;
+    if(!g_streamGovernor || g_shutdown) return;
 
     // --- Buildings-headroom priority pump (every tick, before rate-limiter) ---
     int bU=0, bM=0;
@@ -300,11 +327,37 @@ static void StreamingSupervisor() {
     }
 
     if(pumpThisTick) {
-        CStream_LoadAllRequested(true);
+        CStream_LoadAllRequested(true);  // priority-only: buildings
         if(!g_pumpEverLogged || (now - g_pumpLastLogTick) >= 30000) {
             g_pumpEverLogged = true;
             g_pumpLastLogTick = now;
             SessionLogWrite("PRIORITY_PUMP %d", g_pumpBurstCount > 0 ? g_pumpBurstCount : 1);
+        }
+    }
+
+    // --- Normal-queue pump: ensures vehicles/peds get serviced between priority bursts ---
+    static uint32_t g_lastNormalPumpTick = 0;
+    if(!pumpThisTick && (now - g_lastNormalPumpTick) >= 500) {
+        g_lastNormalPumpTick = now;
+        CStream_LoadAllRequested(false);  // normal queue: vehicles, peds, etc.
+    }
+
+    // --- BigBuildings speed-valve: unload at higher headroom when moving fast ---
+    if(g_camLayoutOk && g_camSpeed > 30.0f && buildingsHead < 0.50f) {
+        if(buildingsHead < 0.45f && (now - g_lastBbValveTick) >= 500) {
+            g_lastBbValveTick = now;
+            CStream_RemoveBigBuildings();
+        }
+    }
+
+    // --- Zone session-log: first per 30s on sector change ---
+    {   int sx = g_playerSectorX, sy = g_playerSectorY;
+        bool sectorChanged = (sx != g_prevSectorX || sy != g_prevSectorY);
+        if((sectorChanged || (now - g_lastZoneLogTick) >= 30000) && (now - g_lastZoneLogTick) >= 30000) {
+            if(sectorChanged) { g_prevSectorX = sx; g_prevSectorY = sy; }
+            g_lastZoneLogTick = now;
+            SessionLogWrite("ZONE sector=(%d,%d) head=%.0f%% pump=%d",
+                sx, sy, buildingsHead * 100.0f, pumpThisTick ? 1 : 0);
         }
     }
 
@@ -367,7 +420,7 @@ static const char* SHM_NAME = "GTA_BRIDGE_SHM";
 static HANDLE g_shmHandle = NULL;
 static void* g_shmView = nullptr;
 static size_t g_shmSize = 0;
-static volatile bool g_shutdown = false;
+// g_shutdown declared earlier (~line 273)
 static HANDLE g_thread = NULL;
 
 static bool GetMemUsage(int &availMb, int &usedMb) {
@@ -595,14 +648,22 @@ static void DrawStatsBlock(bool full){
             safeReadFloat(0x8CD800, lodCur);
             char spdBuf[16];
             if(g_camLayoutOk) sprintf(spdBuf, "%.1f", g_camSpeed);
+            else if(g_camSpeedInsane) spdBuf[0]='?', spdBuf[1]='\0';
             else spdBuf[0]='-', spdBuf[1]='\0';
             sprintf(b, "LOD %.2f tgt=%.2f gov=%.2f spd=%s", lodCur, g_lodTarget, GovernorLodFactor(), spdBuf);
+            StatsText(b,sx,y,sc,nullptr); y+=lh;
+        }
+        {   // zone/sector line
+            sprintf(b, "ZONE x=%.0f y=%.0f sector=(%d,%d)", g_playerPosX, g_playerPosY, g_playerSectorX, g_playerSectorY);
             StatsText(b,sx,y,sc,nullptr); y+=lh;
         }
         char sp[62]; DrawSparkline(sp); StatsText(sp,sx,y,sc*0.82f,&COL_GREEN); y+=lh;
         int au,u; if(GetMemUsage(au,u)){ sprintf(b,"STREAMING %d MB used / %d avail",u,au); StatsText(b,sx,y,sc,nullptr); y+=lh; }
         int tu,tm; if(PoolUsageByName("textures",tu,tm)){ sprintf(b,"TEXTURES  %d / %d",tu,tm); StatsText(b,sx,y,sc,nullptr); y+=lh; }
         int mu,mm; if(PoolUsageByName("models",mu,mm)){ sprintf(b,"MODELS    %d / %d",mu,mm); StatsText(b,sx,y,sc,nullptr); y+=lh; }
+        int bu,bmax; if(ReadPoolUsage(0xB74498,bu,bmax) && bmax>0){ sprintf(b,"BUILDINGS %d / %d",bu,bmax); StatsText(b,sx,y,sc,nullptr); y+=lh; }
+        int ou,omax; if(ReadPoolUsage(0xB7449C,ou,omax) && omax>0){ sprintf(b,"OBJECTS  %d / %d",ou,omax); StatsText(b,sx,y,sc,nullptr); y+=lh; }
+        { sprintf(b,"TIMEMODELS  - / -   VEHICLEMODELS  - / -"); StatsText(b,sx,y,sc,nullptr); y+=lh; }
     }
 }
 
