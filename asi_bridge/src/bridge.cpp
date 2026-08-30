@@ -243,11 +243,16 @@ static void DynamicRenderScale() {
 // supervisor that drains priority requests every tick and evicts unused
 // models under memory pressure so load/unload tracks actual demand.
 static bool GetMemUsage(int &availMb, int &usedMb); // fwd
+static void SessionLogWrite(const char* fmt, ...);   // fwd (defined below, used by pump logging)
 static bool g_streamGovernor = true;
 static float g_pressSoft = 0.85f, g_pressHard = 0.93f;
 static float g_fpsMin = 40.0f, g_fpsMax = 55.0f;
 static float g_fpsAvg = 60.0f;
 static uint32_t g_fpsTick = 0, g_fpsFrames = 0, g_supTick = 0;
+// Buildings-headroom priority pump state
+static int      g_pumpBurstCount = 0;
+static uint32_t g_pumpLastLogTick = 0;
+static bool     g_pumpEverLogged = false;
 
 typedef void (*FnVoid)();
 static FnVoid CStream_RemoveAllUnused = (FnVoid)0x40CF80;
@@ -276,20 +281,47 @@ static void StreamingSupervisor() {
         g_fpsFrames = 0; g_fpsTick = now;
     }
     if(!g_streamGovernor) return;
-    if(now - g_supTick < 750) return; // ~1.3 Hz decision rate
+
+    // --- Buildings-headroom priority pump (every tick, before rate-limiter) ---
+    int bU=0, bM=0;
+    bool buildingsOk = ReadPoolUsage(0xB74498, bU, bM) && bM > 0;
+    float buildingsHead = buildingsOk ? (1.0f - (float)bU/(float)bM) : 1.0f;
+
+    bool pumpThisTick = false;
+    if(buildingsHead < 0.15f) {
+        // burst: max 10 consecutive ticks, then 1 cooldown
+        if(g_pumpBurstCount < 10) { pumpThisTick = true; ++g_pumpBurstCount; }
+        else                        { g_pumpBurstCount = 0; }
+    } else if(buildingsHead < 0.30f) {
+        pumpThisTick = true;
+        g_pumpBurstCount = 0;
+    } else {
+        g_pumpBurstCount = 0;
+    }
+
+    if(pumpThisTick) {
+        CStream_LoadAllRequested(true);
+        if(!g_pumpEverLogged || (now - g_pumpLastLogTick) >= 30000) {
+            g_pumpEverLogged = true;
+            g_pumpLastLogTick = now;
+            SessionLogWrite("PRIORITY_PUMP %d", g_pumpBurstCount > 0 ? g_pumpBurstCount : 1);
+        }
+    }
+
+    // --- Rate-limited memory-pressure eviction (gated: no RemoveBigBuildings when buildings full) ---
+    if(now - g_supTick < 750) return;
     g_supTick = now;
     int a=-1,u=-1;
     if(!GetMemUsage(a,u) || a<=0) return;
     float pressure = (float)u / (float)a;
     if(pressure >= g_pressHard) {
         CStream_PurgeRequestList();
-        CStream_RemoveBigBuildings();
+        if(buildingsHead >= 0.30f) CStream_RemoveBigBuildings(); // gate: don't fight the pump
         CStream_RemoveAllUnused();
     } else if(pressure >= g_pressSoft) {
         CStream_RemoveAllUnused();
-    } else {
-        CStream_LoadAllRequested(true); // fast-drain priority queue while headroom exists
     }
+    // else low pressure: pump already handled above
 }
 
 // -------- Bridge ini ([OPTIONS] + [BRIDGE]) --------
