@@ -309,45 +309,16 @@ static void StreamingSupervisor() {
     }
     if(!g_streamGovernor || g_shutdown) return;
 
-    // --- Buildings-headroom priority pump (every tick, before rate-limiter) ---
-    int bU=0, bM=0;
-    bool buildingsOk = ReadPoolUsage(0xB74498, bU, bM) && bM > 0;
-    float buildingsHead = buildingsOk ? (1.0f - (float)bU/(float)bM) : 1.0f;
-
-    bool pumpThisTick = false;
-    if(buildingsHead < 0.15f) {
-        // burst: max 10 consecutive ticks, then 1 cooldown
-        if(g_pumpBurstCount < 10) { pumpThisTick = true; ++g_pumpBurstCount; }
-        else                        { g_pumpBurstCount = 0; }
-    } else if(buildingsHead < 0.30f) {
-        pumpThisTick = true;
-        g_pumpBurstCount = 0;
-    } else {
-        g_pumpBurstCount = 0;
-    }
-
-    if(pumpThisTick) {
-        CStream_LoadAllRequested(true);  // priority-only: buildings
-        if(!g_pumpEverLogged || (now - g_pumpLastLogTick) >= 30000) {
-            g_pumpEverLogged = true;
-            g_pumpLastLogTick = now;
-            SessionLogWrite("PRIORITY_PUMP %d", g_pumpBurstCount > 0 ? g_pumpBurstCount : 1);
-        }
-    }
-
-    // --- Normal-queue pump: ensures vehicles/peds get serviced between priority bursts ---
+    // --- Gentle normal-queue pump: ensures ALL models (vehicles, peds, buildings) get serviced ---
+    // Fires every 1s only when buildings pool is low — never monopolizes, never removes anything.
     static uint32_t g_lastNormalPumpTick = 0;
-    if(!pumpThisTick && (now - g_lastNormalPumpTick) >= 500) {
-        g_lastNormalPumpTick = now;
-        CStream_LoadAllRequested(false);  // normal queue: vehicles, peds, etc.
-    }
+    int bU=0, bM=0;
+    float buildingsHead = 1.0f;
+    if(ReadPoolUsage(0xB74498, bU, bM) && bM > 0) buildingsHead = 1.0f - (float)bU/(float)bM;
 
-    // --- BigBuildings speed-valve: unload at higher headroom when moving fast ---
-    if(g_camLayoutOk && g_camSpeed > 30.0f && buildingsHead < 0.50f) {
-        if(buildingsHead < 0.45f && (now - g_lastBbValveTick) >= 500) {
-            g_lastBbValveTick = now;
-            CStream_RemoveBigBuildings();
-        }
+    if(buildingsHead < 0.20f && (now - g_lastNormalPumpTick) >= 1000) {
+        g_lastNormalPumpTick = now;
+        CStream_LoadAllRequested(false);  // normal queue — includes vehicles, peds, everything
     }
 
     // --- Zone session-log: first per 30s on sector change ---
@@ -356,8 +327,8 @@ static void StreamingSupervisor() {
         if((sectorChanged || (now - g_lastZoneLogTick) >= 30000) && (now - g_lastZoneLogTick) >= 30000) {
             if(sectorChanged) { g_prevSectorX = sx; g_prevSectorY = sy; }
             g_lastZoneLogTick = now;
-            SessionLogWrite("ZONE sector=(%d,%d) head=%.0f%% pump=%d",
-                sx, sy, buildingsHead * 100.0f, pumpThisTick ? 1 : 0);
+            SessionLogWrite("ZONE sector=(%d,%d) head=%.0f%%",
+                sx, sy, buildingsHead * 100.0f);
         }
     }
 
