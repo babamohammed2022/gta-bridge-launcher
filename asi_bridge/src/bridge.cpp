@@ -474,7 +474,7 @@ static int PoolUsageByName(const char* sub,int& u,int& m){
 // FORMAT:
 //   ==== GTA BRIDGE SESSION 2026-08-27 14:55:02 ====
 //   [14:55:02] INIT asi=v2.3 streaming=<dbMB> lod=<maxLodScale> overlay=<0|1|2>
-//   [14:55:10] OVERLAY mode=FULL (user F7)
+//   [14:55:10] OVERLAY mode=FULL (user F6)
 //   [14:55:11] SAMPLE fps=30.3 avg_ms=33.1 min=31.8 max=32.8 stream_used=10 models=9959/10150
 //   ...
 //   [15:02:44] POOLWARN <poolname> used>=95%
@@ -546,11 +546,11 @@ static void StatHudFrame(){
     s_avgMs+=((double)dt-s_avgMs)*0.05;             // smoothed frame ms
     s_ftHist[s_ftIdx]=dt; s_ftIdx=(s_ftIdx+1)%120;
     // F7 edge detect -> cycle mode + persist + session min/max reset + log
-    bool f7now=(GetKeyState(VK_F7)&0x8000)!=0;
+    bool f7now=(GetKeyState(VK_F6)&0x8000)!=0;
     if(f7now&&!s_f7Prev){
         s_ovMode=(s_ovMode+1)%3; SaveOverlayMode(); s_minFps=1e9f;s_maxFps=0.f;
         const char* modeStr = s_ovMode==1?"FULL":(s_ovMode==2?"MIN":"OFF");
-        SessionLogWrite("OVERLAY mode=%s (user F7)", modeStr);
+        SessionLogWrite("OVERLAY mode=%s (user F6)", modeStr);
     }
     s_f7Prev=f7now;
     // 1Hz tick: CSV autolog, session SAMPLE, POOLWARN
@@ -609,7 +609,7 @@ static void DrawStatsBlock(bool full){
     double avfps=1000.0/s_avgMs;
     const StatCol& fc = avfps>50?COL_GREEN:(avfps>30?COL_YELL:COL_RED);
     char b[192];
-    StatsText("GTA BRIDGE STATS [F7 FULL/MIN/OFF]",sx,y,sc,nullptr); y+=lh;
+    StatsText("GTA BRIDGE STATS [F6 FULL/MIN/OFF]",sx,y,sc,nullptr); y+=lh;
     sprintf(b,"FPS %5.1f  (%4.1f ms)",avfps,s_avgMs);
     StatsText(b,sx,y,sc*1.2f,&fc); y+=lh*1.6f;
     if(s_minFps<=s_maxFps) { sprintf(b,"MIN %5.1f   AVG %5.1f   MAX %5.1f",s_minFps,avfps,s_maxFps); StatsText(b,sx,y,sc,nullptr); y+=lh; }
