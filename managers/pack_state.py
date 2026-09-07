@@ -305,6 +305,9 @@ def _install_available_parts(
                     log_lines.append(f"  Backed up: {dest_rel}")
 
                 # place
+                if basename.lower() == 'gta_sa.exe':
+                    log_lines.append(f"  SKIP: gta_sa.exe (user provides own executable)")
+                    continue
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copy2(src, dst)
                 log_lines.append(f"  Placed: {dest_rel}")

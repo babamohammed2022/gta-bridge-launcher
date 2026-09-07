@@ -1,0 +1,38 @@
+{
+  "id": "sas87_september",
+  "title": "GTA San Andreas Stories — September 2026",
+  "description": "Full conversion mod pack — SAS87 September 2026 release. Requires clean GTA SA 1.0 US (hoodlum).",
+  "category": "total_conversion",
+  "version": "2026.09",
+  "source": "local-bundle",
+  "parts": [
+    {
+      "name": "DYOM 8.1",
+      "dest_rel": "DYOM/",
+      "source_url": "https://gtaforums.com/topic/927016-dyom-v8/",
+      "archive_hint": "DYOM_V810.zip",
+      "size": null
+    },
+    {
+      "name": "CLEO+",
+      "dest_rel": "CLEO/",
+      "source_url": "https://github.com/cleolibrary/CLEO-plus",
+      "archive_hint": "CLEOPlus.zip",
+      "size": null
+    },
+    {
+      "name": "Essentials Pack",
+      "dest_rel": "modloader/",
+      "source_url": "https://gtasas.netlify.app",
+      "archive_hint": "1613459076_essentials.zip",
+      "size": null
+    },
+    {
+      "name": "Clean GTA SA 1.0 (user provides)",
+      "dest_rel": "",
+      "source_url": "",
+      "archive_hint": null,
+      "size": null
+    }
+  ]
+}

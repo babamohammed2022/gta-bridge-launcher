@@ -56,6 +56,7 @@ SAS87_SHIP_PACKS = [
     "limit_adjuster",    # III.VC.SA.LimitAdjuster
     "data_patches",      # colorcycle.dat / weathers2.dat / map fixes
     "bridge_scripts",    # bridge-specific scripts (modloader layer)
+    "sas87_september",   # full conversion: 25 SAS87 content packs (dircopy -> modloader/)
 ]
 
 GAME_VERSION_NOTE = ("Target game: clean GTA San Andreas 1.0 US (hoodlum). "

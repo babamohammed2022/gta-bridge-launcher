@@ -12,6 +12,7 @@ cp1252 / ASCII only.  ConfigParser strict=False, optionxform=str.
 import configparser
 import hashlib
 import json
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -44,6 +45,17 @@ FILES = {
         'modloader/modloader.ini',
         True,
         {},  # snapshot-driven
+    ),
+    'player_options': (
+        'PlayerOptions.ini',
+        True,
+        {
+            'Gameplay.AutoAim': '0',
+            'Density.CarMultiplier': '1.3',
+            'Density.PedMultiplier': '1.3',
+            'Player.FreeResprays': '1',
+            'Debug.ShowMessages': '0',
+        },
     ),
 }
 
@@ -122,6 +134,66 @@ def save(key: str, game_dir: str, cp: configparser.ConfigParser) -> bool:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(str(path), 'w', encoding='utf-8') as f:
             cp.write(f)
+        return True
+    except OSError:
+        return False
+
+
+def save_player_options(game_dir: str, values: Dict[str, str]) -> bool:
+    """Write dotted-section.key values into PlayerOptions.ini preserving comments.
+
+    *values* keys are dotted like ``'Density.CarMultiplier'``.
+    Uses line-level regex replacement so comment blocks survive intact.
+    If the file does not exist, copies the template first.
+    Returns True on success.
+    """
+    path = Path(game_dir) / 'PlayerOptions.ini'
+    if not path.exists():
+        template = _data_dir() / 'templates' / 'PlayerOptions.ini'
+        if template.exists():
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(template), str(path))
+            except OSError:
+                return False
+        else:
+            return False
+
+    try:
+        text = path.read_text(encoding='utf-8')
+    except OSError:
+        return False
+
+    for dotted_key, val in values.items():
+        # dotted_key = 'Section.Key'
+        if '.' not in dotted_key:
+            continue
+        _section, _key = dotted_key.rsplit('.', 1)
+        val_str = str(val)
+        # Replace existing key=value line; if not found, append after section header
+        pattern = re.compile(
+            r'(?m)^(\s*' + re.escape(_key) + r'\s*=\s*).*$')
+        if pattern.search(text):
+            text = pattern.sub(r'\g<1>' + val_str, text)
+        else:
+            # Append after the section header [Section]
+            sec_pat = re.compile(
+                r'(?m)^(\[' + re.escape(_section) + r'\]\s*)$')
+            m = sec_pat.search(text)
+            if m:
+                # Insert new key=value line after the section header line
+                pos = m.end()
+                # Find the end of the section header line
+                eol = text.find('\n', pos)
+                if eol == -1:
+                    text += '\n' + _key + '=' + val_str
+                else:
+                    insert_at = eol + 1
+                    text = (text[:insert_at] + _key + '=' + val_str + '\n' +
+                            text[insert_at:])
+
+    try:
+        path.write_text(text, encoding='utf-8')
         return True
     except OSError:
         return False

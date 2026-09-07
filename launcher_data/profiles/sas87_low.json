@@ -1,0 +1,32 @@
+{
+  "name": "sas87_low",
+  "description": "Low-end hardware — 2 GB VRAM target. Reduced density, minimal streaming.",
+  "skygfx": {
+    "pipeline": "PBR",
+    "buildingPipe": "PBR",
+    "dualPassBuilding": "0",
+    "dualPassDefault": "0",
+    "dualPassGrass": "0",
+    "dualPassPed": "0",
+    "dualPassVehicle": "0",
+    "godRaysEnable": "0",
+    "godRaysNumSamples": "8",
+    "sssPostProcessEnable": "0",
+    "pedShadows": "0",
+    "stencilShadows": "0",
+    "enableNormalMaps": "0"
+  },
+  "bridge": {
+    "max_lod_scale": "2.0",
+    "streaming_mem_mb": "1024",
+    "vegetation_boost": "0"
+  },
+  "player_options": {
+    "Density.CarMultiplier": 0.6,
+    "Density.PedMultiplier": 0.6,
+    "Gameplay.AutoAim": 0,
+    "Player.FreeResprays": 1,
+    "Debug.ShowMessages": 0
+  },
+  "notes": "Target: ~2 GB VRAM, 8 GB RAM. Disables dual-pass, god rays, SSS, ped shadows, normal maps. Streaming 1024 MB, LOD 2.0. Car/ped density at 0.6x. Suitable for integrated graphics or low-end discrete GPUs (GTX 960, RX 560, Intel Arc A310)."
+}

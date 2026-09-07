@@ -79,5 +79,14 @@
     "layer": 4,
     "order": 0,
     "deploy_mode": "modloader"
+  },
+  {
+    "id": "sas87_september",
+    "name": "GTA San Andreas Stories — September 2026 (full conversion)",
+    "category": "total_conversion",
+    "default_enabled": false,
+    "layer": 5,
+    "order": 100,
+    "deploy_mode": "dircopy"
   }
 ]

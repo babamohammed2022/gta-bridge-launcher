@@ -1,0 +1,32 @@
+{
+  "name": "sas87_medium",
+  "description": "Mid-range hardware — 4 GB VRAM target. Balanced quality and performance.",
+  "skygfx": {
+    "pipeline": "PBR",
+    "buildingPipe": "PBR",
+    "dualPassBuilding": "1",
+    "dualPassDefault": "1",
+    "dualPassGrass": "1",
+    "dualPassPed": "1",
+    "dualPassVehicle": "1",
+    "godRaysEnable": "1",
+    "godRaysNumSamples": "12",
+    "sssPostProcessEnable": "1",
+    "pedShadows": "1",
+    "stencilShadows": "1",
+    "enableNormalMaps": "1"
+  },
+  "bridge": {
+    "max_lod_scale": "3.0",
+    "streaming_mem_mb": "1536",
+    "vegetation_boost": "1"
+  },
+  "player_options": {
+    "Density.CarMultiplier": 1.0,
+    "Density.PedMultiplier": 1.0,
+    "Gameplay.AutoAim": 0,
+    "Player.FreeResprays": 1,
+    "Debug.ShowMessages": 0
+  },
+  "notes": "Target: ~4 GB VRAM, 12 GB RAM. Full dual-pass, god rays (12 samples), SSS, ped shadows, normal maps. Streaming 1536 MB, LOD 3.0. Default density 1.0x. Suitable for GTX 1060, RX 580, RTX 3050 class GPUs."
+}

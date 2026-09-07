@@ -1,0 +1,32 @@
+{
+  "name": "sas87_high",
+  "description": "High-end hardware — 8 GB VRAM target. September defaults with enhanced streaming.",
+  "skygfx": {
+    "pipeline": "PBR",
+    "buildingPipe": "PBR",
+    "dualPassBuilding": "1",
+    "dualPassDefault": "1",
+    "dualPassGrass": "1",
+    "dualPassPed": "1",
+    "dualPassVehicle": "1",
+    "godRaysEnable": "1",
+    "godRaysNumSamples": "20",
+    "sssPostProcessEnable": "1",
+    "pedShadows": "1",
+    "stencilShadows": "1",
+    "enableNormalMaps": "1"
+  },
+  "bridge": {
+    "max_lod_scale": "4.0",
+    "streaming_mem_mb": "2048",
+    "vegetation_boost": "1"
+  },
+  "player_options": {
+    "Density.CarMultiplier": 1.3,
+    "Density.PedMultiplier": 1.3,
+    "Gameplay.AutoAim": 0,
+    "Player.FreeResprays": 1,
+    "Debug.ShowMessages": 0
+  },
+  "notes": "Target: ~8 GB VRAM, 16 GB RAM. September defaults (1.3x density). Full SkyGfx with 20 god ray samples, SSS, ped shadows, normal maps. Streaming 2048 MB, LOD 4.0. Suitable for RTX 2070, RTX 3060 Ti, RX 6700 XT class GPUs."
+}

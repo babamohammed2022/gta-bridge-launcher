@@ -194,6 +194,12 @@ class ProfileManager:
             if not cp.has_option('PROFILES', 'active_profile'):
                 cp.set('PROFILES', 'active_profile', name)
             config_registry.save('gta_bridge', str(game_dir), cp)
+
+        # PlayerOptions.ini — comment-heavy, use line-rewrite to preserve
+        if data.get('player_options'):
+            from managers import config_registry
+            config_registry.save_player_options(str(game_dir),
+                                                 data['player_options'])
         return True
 
     # ---- encode a sweep result as a perf profile ----

@@ -1,0 +1,32 @@
+{
+  "name": "sas87_ultra",
+  "description": "Ultra-high-end hardware — 12+ GB VRAM target. Maximum everything.",
+  "skygfx": {
+    "pipeline": "PBR",
+    "buildingPipe": "PBR",
+    "dualPassBuilding": "1",
+    "dualPassDefault": "1",
+    "dualPassGrass": "1",
+    "dualPassPed": "1",
+    "dualPassVehicle": "1",
+    "godRaysEnable": "1",
+    "godRaysNumSamples": "32",
+    "sssPostProcessEnable": "1",
+    "pedShadows": "1",
+    "stencilShadows": "1",
+    "enableNormalMaps": "1"
+  },
+  "bridge": {
+    "max_lod_scale": "6.0",
+    "streaming_mem_mb": "2048",
+    "vegetation_boost": "1"
+  },
+  "player_options": {
+    "Density.CarMultiplier": 1.6,
+    "Density.PedMultiplier": 1.6,
+    "Gameplay.AutoAim": 0,
+    "Player.FreeResprays": 1,
+    "Debug.ShowMessages": 0
+  },
+  "notes": "Target: 12+ GB VRAM, 32 GB RAM. Maximum density (1.6x), 32 god ray samples, LOD 6.0, streaming 2048 MB. All effects maxed. Suitable for RTX 3080/4080, RX 7900 XTX, RTX 4090 class GPUs."
+}
