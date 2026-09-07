@@ -181,11 +181,14 @@ def collect_launcher(bin_dir):
 
 
 def build_preset(planned_packs):
-    """Build the sas87.json preset from ALL_MODS (externally-sourced mods).
+    """Load the real SAS87 September preset (or fall back to ALL_MODS generation)."""
+    preset_file = PROJECT / "launcher_data" / "dlc_presets" / "sas87_september.json"
+    if preset_file.is_file():
+        try:
+            return json.load(open(preset_file, encoding="utf-8"))
+        except Exception as e:
+            print("  [WARN] preset load failed %s: %s" % (preset_file, e))
 
-    Each ALL_MODS entry becomes a preset part. Ship packs are NOT included as
-    parts — they are preloaded in the bundle.
-    """
     parts = []
     for mod in ALL_MODS:
         if mod.extract_to_sa_root:
@@ -270,7 +273,7 @@ def make_readme_txt(planned, preset_parts, has_launcher):
             "     existing launcher_data/ if present).",
             "  4. Run GTA_Bridge_Launcher.exe.",
             "  5. Open the INSTALLER screen and load the SAS 1987 preset",
-            "     (launcher_data/dlc_presets/sas87.json).",
+            "     (launcher_data/dlc_presets/sas87_september.json).",
             "  6. Download and install each part listed below.",
             "",
         ]
@@ -279,7 +282,7 @@ def make_readme_txt(planned, preset_parts, has_launcher):
             "  1. Copy launcher_data/ next to gta_sa.exe (merge with",
             "     existing launcher_data/ if present).",
             "  2. Open the launcher INSTALLER screen and load the SAS 1987",
-            "     preset (launcher_data/dlc_presets/sas87.json).",
+            "     preset (launcher_data/dlc_presets/sas87_september.json).",
             "  3. Download and install each part listed below.",
             "",
         ]
@@ -348,7 +351,7 @@ def copy_to_outdir(out_dir, planned, bin_entries, preset):
     # Write preset
     preset_dir = out_dir / "launcher_data" / "dlc_presets"
     preset_dir.mkdir(parents=True, exist_ok=True)
-    preset_path = preset_dir / "sas87.json"
+    preset_path = preset_dir / "sas87_september.json"
     with open(preset_path, "w", encoding="utf-8") as f:
         json.dump(preset, f, indent=2, ensure_ascii=False)
         f.write("\n")
