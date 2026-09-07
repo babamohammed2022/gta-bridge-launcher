@@ -54,6 +54,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 ProgressCb = Callable[[int, int], None]  # (current, total)
+StageCb = Callable[[str], None]          # stage label
 
 
 class PartState(Enum):
@@ -119,31 +120,47 @@ def _default_archive_dirs() -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# classify
+# Shared helpers
 # ---------------------------------------------------------------------------
 
-def classify(
+def _call_progress(cb: Optional[StageCb], stage: str) -> None:
+    """Safely call a stage progress callback."""
+    if cb:
+        try:
+            cb(stage)
+        except Exception:
+            pass
+
+
+def _find_part_dict(preset: dict, dest_rel: str) -> Optional[dict]:
+    """Return the part dict matching *dest_rel*, or None."""
+    for p in (preset.get("parts") or []):
+        if p.get("dest_rel") == dest_rel:
+            return p
+    return None
+
+
+def _first_writable(dirs: List[str]) -> Optional[str]:
+    """Return the first directory that exists and is writable."""
+    for d in dirs:
+        if os.path.isdir(d) and os.access(d, os.W_OK):
+            return d
+    return None
+
+
+# ---------------------------------------------------------------------------
+# _resolve_parts  (core classification logic)
+# ---------------------------------------------------------------------------
+
+def _resolve_parts(
     preset: dict,
     game_dir: str,
-    extra_dirs: Optional[List[str]] = None,
+    search_dirs: List[str],
 ) -> PackState:
-    """Determine availability of every part in *preset*.
+    """Core classification: scan *search_dirs* for archives and classify every part.
 
-    For each part:
-      INSTALLED — file exists at game_dir/dest_rel (size matches if given).
-      AVAILABLE — not installed, but archive_hint found via
-                  extractor.scan_archives / find_mod_in_archives over
-                  extra_dirs (defaults: ~/Downloads, project archives dir).
-      MISSING   — otherwise.
-
-    Returns a PackState with arrays grouped by state.
+    Returns a PackState with parts grouped by state.
     """
-    if not preset.get("parts"):
-        return PackState(state=PartState.INSTALLED)
-
-    search_dirs: List[str] = extra_dirs if extra_dirs is not None else _default_archive_dirs()
-
-    # Collect all archive paths once
     all_archives: List[str] = []
     for d in search_dirs:
         all_archives.extend(scan_archives(d))
@@ -167,13 +184,11 @@ def classify(
                 if actual == expected_size:
                     pi.state = PartState.INSTALLED
                 else:
-                    # size mismatch — treat as missing (re-download)
                     pi.state = PartState.MISSING
             else:
                 pi.state = PartState.INSTALLED
 
         if pi.state == PartState.MISSING:
-            # Try to locate archive
             if archive_hint:
                 arc = find_mod_in_archives(all_archives, archive_hint, name)
                 if arc:
@@ -197,35 +212,48 @@ def classify(
 
 
 # ---------------------------------------------------------------------------
-# install_available
+# classify
 # ---------------------------------------------------------------------------
 
-def install_available(
+def classify(
     preset: dict,
     game_dir: str,
     extra_dirs: Optional[List[str]] = None,
+) -> PackState:
+    """Determine availability of every part in *preset*.
+
+    For each part:
+      INSTALLED — file exists at game_dir/dest_rel (size matches if given).
+      AVAILABLE — not installed, but archive_hint found via
+                  extractor.scan_archives / find_mod_in_archives over
+                  extra_dirs (defaults: ~/Downloads, project archives dir).
+      MISSING   — otherwise.
+
+    Returns a PackState with arrays grouped by state.
+    """
+    if not preset.get("parts"):
+        return PackState(state=PartState.INSTALLED)
+    search_dirs: List[str] = extra_dirs if extra_dirs is not None else _default_archive_dirs()
+    return _resolve_parts(preset, game_dir, search_dirs)
+
+
+# ---------------------------------------------------------------------------
+# _install_available_parts  (shared install logic)
+# ---------------------------------------------------------------------------
+
+def _install_available_parts(
+    state: PackState,
+    preset: dict,
+    game_dir: str,
+    log_lines: List[str],
     progress: Optional[ProgressCb] = None,
 ) -> tuple[bool, List[str]]:
-    """Install an AVAILABLE preset by extracting archives and placing parts.
+    """Extract and place every AVAILABLE part in *state*.
 
-    Steps per available part:
-      1. Extract the matched archive to a temp directory.
-      2. Locate the part file inside the extracted tree (by basename match).
-      3. Backup any existing file at game_dir/dest_rel to
-         launcher_data/backups/pack_install_<ts>/.
-      4. Copy the part to game_dir/dest_rel.
-      5. After all parts placed, re-classify — must return INSTALLED.
-
-    Returns (ok, log_lines).
+    Returns (ok, log_lines) — caller must re-classify to verify.
     """
-    log_lines: List[str] = []
-
-    # --- classify first to locate archives ---
-    state = classify(preset, game_dir, extra_dirs=extra_dirs)
-    if state.is_installed:
-        return True, ["All parts already installed."]
     if not state.available_parts:
-        return False, ["No available parts to install. Cannot proceed."]
+        return False, log_lines
 
     # --- backup dir ---
     backup_root = Path(_backup_dir())
@@ -233,14 +261,13 @@ def install_available(
     log_lines.append(f"Backup root: {backup_root}")
 
     # --- build a lookup: archive_path -> [parts that need it] ---
-    arc_to_parts: dict[str, List[dict]] = {}
+    arc_to_parts: dict[str, List[PartInfo]] = {}
     for pi in state.available_parts:
         if pi.archive_path:
             arc_to_parts.setdefault(pi.archive_path, []).append(pi)
 
     total_parts = len(state.available_parts)
     done = 0
-    parts = {p.get("dest_rel", ""): p for p in (preset.get("parts") or [])}
 
     for arc_path, part_infos in arc_to_parts.items():
         if not os.path.isfile(arc_path):
@@ -250,7 +277,6 @@ def install_available(
         # --- extract to temp ---
         tmpdir = tempfile.mkdtemp(prefix="pack_install_")
         try:
-            # Use extractor.extract with progress scoped to this archive
             from installer_src.extractor import extract
 
             def _sub_prog(cur: int, tot: int) -> None:
@@ -291,6 +317,42 @@ def install_available(
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    return True, log_lines
+
+
+# ---------------------------------------------------------------------------
+# install_available
+# ---------------------------------------------------------------------------
+
+def install_available(
+    preset: dict,
+    game_dir: str,
+    extra_dirs: Optional[List[str]] = None,
+    progress: Optional[ProgressCb] = None,
+) -> tuple[bool, List[str]]:
+    """Install an AVAILABLE preset by extracting archives and placing parts.
+
+    Steps per available part:
+      1. Extract the matched archive to a temp directory.
+      2. Locate the part file inside the extracted tree (by basename match).
+      3. Backup any existing file at game_dir/dest_rel to
+         launcher_data/backups/pack_install_<ts>/.
+      4. Copy the part to game_dir/dest_rel.
+      5. After all parts placed, re-classify — must return INSTALLED.
+
+    Returns (ok, log_lines).
+    """
+    log_lines: List[str] = []
+
+    # --- classify first to locate archives ---
+    state = classify(preset, game_dir, extra_dirs=extra_dirs)
+    if state.is_installed:
+        return True, ["All parts already installed."]
+    if not state.available_parts:
+        return False, ["No available parts to install. Cannot proceed."]
+
+    ok, log_lines = _install_available_parts(state, preset, game_dir, log_lines, progress)
+
     # --- re-classify to verify ---
     final = classify(preset, game_dir, extra_dirs=extra_dirs)
     if final.is_installed:
@@ -301,6 +363,131 @@ def install_available(
             log_lines.append(f"  FAILED: {m.name} still missing after install")
         return False, log_lines
 
+
+# ---------------------------------------------------------------------------
+# install_or_download
+# ---------------------------------------------------------------------------
+
+def install_or_download(
+    preset: dict,
+    game_dir: str,
+    extra_dirs: Optional[List[str]] = None,
+    allow_network: bool = False,
+    progress: Optional[StageCb] = None,
+) -> tuple[bool, List[str]]:
+    """Install a preset, optionally downloading MISSING parts over the network.
+
+    Classification pass (same as install_available); for each MISSING part
+    with ``source_url`` and ``allow_network=True``, download the archive to
+    the first writable extra_dir (fallback: ``launcher_data/dlc_presets/archives/``),
+    then continue the local install flow.
+
+    Parts without ``source_url`` or whose download fails remain MISSING.
+
+    Progress callback receives stage strings:
+      ``'classify'``, ``'download <part_name>'``, ``'extract'``,
+      ``'place <part_name>'``, ``'verify'``.
+
+    Returns (ok, log_lines).
+    """
+    log_lines: List[str] = []
+
+    if not preset.get("parts"):
+        return True, ["No parts to install."]
+
+    search_dirs: List[str] = extra_dirs if extra_dirs is not None else _default_archive_dirs()
+
+    _call_progress(progress, "classify")
+    state = _resolve_parts(preset, game_dir, search_dirs)
+
+    if state.is_installed:
+        return True, ["All parts already installed."]
+
+    # --- Network download pass for MISSING parts ---
+    if allow_network and state.missing_parts:
+        dl_dir = _first_writable(search_dirs)
+        if not dl_dir:
+            dl_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "launcher_data",
+                "dlc_presets",
+                "archives",
+            )
+            os.makedirs(dl_dir, exist_ok=True)
+
+        try:
+            from installer_src.downloader import download as _dl
+        except ImportError:
+            log_lines.append("network unavailable (installer_src missing)")
+            allow_network = False
+
+        if allow_network:
+            for pi in list(state.missing_parts):
+                part = _find_part_dict(preset, pi.dest_rel)
+                if not part or not part.get("source_url"):
+                    log_lines.append(f"{pi.name}: no source_url, stays MISSING")
+                    continue
+
+                source_url = part["source_url"]
+                hint = part.get("archive_hint", "")
+                # Derive filename from archive_hint or URL basename
+                if hint:
+                    fname = hint
+                else:
+                    fname = source_url.split("?")[0].rstrip("/").split("/")[-1]
+                if not fname or ("." not in fname):
+                    fname = f"{pi.name}.zip"
+
+                dest_path = os.path.join(dl_dir, fname)
+
+                _call_progress(progress, f"download {pi.name}")
+                try:
+                    _dl(source_url, dest_path)
+                    log_lines.append(f"Downloaded {pi.name} -> {fname}")
+                except Exception as e:
+                    log_lines.append(f"Download failed for {pi.name}: {e}")
+                    continue
+
+            # Re-classify now that new archives may exist
+            _call_progress(progress, "classify")
+            state = _resolve_parts(preset, game_dir, search_dirs)
+
+    # --- Nothing to install ---
+    if not state.available_parts:
+        for pi in state.missing_parts:
+            log_lines.append(f"{pi.name}: MISSING (no source or download failed)")
+        if not log_lines:
+            log_lines.append("No available parts to install.")
+        return False, log_lines
+
+    # --- Install available parts ---
+    _call_progress(progress, "extract")
+
+    # Wrap StageCb -> ProgressCb for the shared helper
+    placed = [0]
+    total_to_place = len(state.available_parts)
+
+    def _int_prog(cur: int, _tot: int) -> None:
+        placed[0] = cur
+        _call_progress(progress, f"place {cur}/{total_to_place}")
+
+    ok, log_lines = _install_available_parts(state, preset, game_dir, log_lines, _int_prog)
+
+    # --- Verify ---
+    _call_progress(progress, "verify")
+    final = _resolve_parts(preset, game_dir, search_dirs)
+    if final.is_installed:
+        log_lines.append("INSTALLED — all parts verified.")
+        return True, log_lines
+    else:
+        for m in final.missing_parts:
+            log_lines.append(f"  FAILED: {m.name} still missing after install")
+        return False, log_lines
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 def _find_in_tree(root: str, basename: str) -> Optional[str]:
     """Walk *root* and return the first file whose basename matches."""

@@ -22,8 +22,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve, QSize
-from PyQt5.QtGui import QFont, QColor, QPainter, QLinearGradient, QPixmap, QImage, QIcon
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve, QSize, QUrl
+from PyQt5.QtGui import QFont, QColor, QPainter, QLinearGradient, QPixmap, QImage, QIcon, QDesktopServices
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QPushButton, QVBoxLayout,
     QHBoxLayout, QGridLayout, QStackedWidget, QListWidget, QListWidgetItem,
@@ -206,6 +206,16 @@ def _data_dir() -> Path:
     if getattr(sys, 'frozen', False):
         return Path(sys.executable).parent / 'launcher_data'
     return HERE / 'launcher_data'
+
+
+def _open_archives_folder():
+    """Open the archives folder in Explorer."""
+    target = _data_dir() / 'dlc_presets' / 'archives'
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        os.startfile(str(target))
+    except Exception:
+        pass
 
 
 # =============================================================================
@@ -736,7 +746,8 @@ class PlayScreen(ScreenBase):
         try:
             ok, lines = install_available(preset, game_dir)
             if ok:
-                self._install_status.setText('INSTALLED')
+                self._install_status.setText('INSTALLED & SELECTED')
+                self.launcher.db_manager.set_dlc_enabled(preset['id'], True)
                 QTimer.singleShot(300, dlg.accept)
                 QTimer.singleShot(350, self._build_quick_mods)
             else:
@@ -755,7 +766,7 @@ class PlayScreen(ScreenBase):
         dlg = QDialog(self)
         dlg.setWindowTitle(f'Missing files — {title}')
         dlg.setStyleSheet(f"background:{T.COLOR_BG};")
-        dlg.setMinimumSize(420, 300)
+        dlg.setMinimumSize(480, 350)
         lay = QVBoxLayout(dlg)
         header = QLabel(f'Missing parts for {title}:')
         header.setStyleSheet(f"color:{T.COLOR_TEXT_BRIGHT}; font-size:13px; padding:8px;")
@@ -766,27 +777,58 @@ class PlayScreen(ScreenBase):
         inner = QWidget()
         inner.setStyleSheet('background:transparent;')
         il = QVBoxLayout(inner)
-        il.setSpacing(2)
+        il.setSpacing(4)
         for pi in ps.missing_parts:
-            line = QLabel(
+            part_row = QWidget()
+            part_row.setStyleSheet('background:transparent;')
+            prl = QHBoxLayout(part_row)
+            prl.setContentsMargins(4, 2, 4, 2)
+            prl.setSpacing(4)
+            # find matching part spec for source_url
+            part_spec = next((p for p in (preset.get('parts') or []) if p.get('name') == pi.name), {})
+            src_url = part_spec.get('source_url', '') or ''
+            info = QLabel(
                 f"{pi.name}\n"
-                f"  get: {next((p.get('source_url','N/A') for p in (preset.get('parts') or []) if p.get('name')==pi.name), 'N/A')}\n"
                 f"  place: {pi.dest_rel}")
-            line.setStyleSheet(
+            info.setStyleSheet(
                 f"color:{T.COLOR_TEXT_DIM}; font-size:11px; padding:4px 8px;"
                 f"border:1px solid {T.COLOR_BORDER}; border-radius:2px;")
-            line.setWordWrap(True)
-            il.addWidget(line)
+            info.setWordWrap(True)
+            prl.addWidget(info, 1)
+            if src_url:
+                page_btn = QPushButton('OPEN PAGE')
+                page_btn.setFlat(True)
+                page_btn.setCursor(Qt.PointingHandCursor)
+                page_btn.setStyleSheet(
+                    f"QPushButton{{color:{T.COLOR_WALKMAN_GREEN}; font-size:10px;"
+                    f"border:1px solid {T.COLOR_WALKMAN_GREEN}; border-radius:2px;"
+                    f"padding:2px 8px; background:transparent;}}"
+                    f"QPushButton:hover{{background:{T.COLOR_HOVER_BG};}}")
+                page_btn.clicked.connect(
+                    lambda _, u=src_url: QDesktopServices.openUrl(QUrl(u)))
+                prl.addWidget(page_btn)
+            il.addWidget(part_row)
         il.addStretch(1)
         scroll.setWidget(inner)
         lay.addWidget(scroll, 1)
+        btn_row = QHBoxLayout()
+        archives_btn = QPushButton('ARCHIVES FOLDER')
+        archives_btn.setStyleSheet(
+            f"QPushButton{{background:{T.COLOR_PANEL_BG}; color:{T.COLOR_TEXT_DIM};"
+            f"border:1px solid {T.COLOR_BORDER}; border-radius:2px; padding:6px 18px;"
+            f"font-size:11px;}}"
+            f"QPushButton:hover{{background:{T.COLOR_HOVER_BG}; color:{T.COLOR_TEXT_BODY};}}")
+        archives_btn.clicked.connect(
+            lambda: _open_archives_folder())
+        btn_row.addWidget(archives_btn)
         close_btn = QPushButton('CLOSE')
         close_btn.setStyleSheet(
             f"QPushButton{{background:{T.COLOR_PANEL_BG}; color:{T.COLOR_TEXT_BODY};"
             f"border:1px solid {T.COLOR_BORDER}; border-radius:2px; padding:6px 18px;}}"
             f"QPushButton:hover{{background:{T.COLOR_HOVER_BG};}}")
         close_btn.clicked.connect(dlg.accept)
-        lay.addWidget(close_btn, 0, Qt.AlignCenter)
+        btn_row.addWidget(close_btn)
+        lay.addLayout(btn_row)
         dlg.exec_()
 
     def _toggle_pack(self, pid: str):
@@ -3039,6 +3081,12 @@ class MainWindow(QMainWindow):
         mode = launcher.config_manager.get_setting('ui.mode', 'simple')
         self._set_mode(mode, initial=True)
 
+        # first-run SAS87 intro popup (shown after window paint via timer)
+        self._sas87_sentinel = _data_dir() / '.sas87_intro_done'
+        _sas87_preset = _data_dir() / 'dlc_presets' / 'sas87.json'
+        if _sas87_preset.exists() and not self._sas87_sentinel.exists():
+            QTimer.singleShot(400, self._show_sas87_intro)
+
     def _set_mode(self, mode: str, initial: bool = False):
         """Switch UI mode and persist."""
         self.launcher.config_manager.set_setting('ui.mode', mode)
@@ -3092,6 +3140,31 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+    def _show_sas87_intro(self):
+        """First-run dialog explaining the SAS 87 preloaded modpack."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle('SAS 1987 — first version')
+        dlg.setStyleSheet(f"background:{T.COLOR_BG};")
+        dlg.setFixedSize(480, 200)
+        lay = QVBoxLayout(dlg)
+        msg = QLabel(
+            'This build ships with the SAS 87 modpack preloaded. '
+            'The launcher will scan for the extra install files; '
+            'drop them in launcher_data/dlc_presets/archives/ '
+            'or let the launcher download them.')
+        msg.setWordWrap(True)
+        msg.setStyleSheet(
+            f"color:{T.COLOR_TEXT_BODY}; font-size:12px; padding:16px;")
+        lay.addWidget(msg)
+        btn = QPushButton('GOT IT')
+        btn.setStyleSheet(
+            f"QPushButton{{background:{T.COLOR_WALKMAN_ORANGE}; color:{T.COLOR_ON_ACCENT};"
+            f"border:none; border-radius:2px; padding:6px 24px; font-size:12px;}}"
+            f"QPushButton:hover{{background:{T.COLOR_SUNSET_ORANGE};}}")
+        btn.clicked.connect(lambda: (self._sas87_sentinel.write_text('1', encoding='utf-8'), dlg.accept()))
+        lay.addWidget(btn, 0, Qt.AlignCenter)
+        dlg.exec_()
+
     def closeEvent(self, ev):  # noqa: N802
         ps = self.screens.widget(0)
         if isinstance(ps, PlayScreen) and ps.worker:
@@ -3137,6 +3210,18 @@ def _main_inner():
             _mcfg = Path(getattr(sys, '_MEIPASS', '')) / 'config'
             if (_mcfg / 'settings.json').exists():
                 _shutil.copytree(_mcfg, F('config'), dirs_exist_ok=True)
+    except Exception:
+        pass
+    # frozen first-run: preload bundled dlc_presets into writable data dir
+    try:
+        if getattr(sys, 'frozen', False):
+            import shutil as _shutil
+            _bundled_presets = Path(getattr(sys, '_MEIPASS', '')) / 'launcher_data' / 'dlc_presets'
+            _writable_presets = _data_dir() / 'dlc_presets'
+            if _bundled_presets.is_dir():
+                if not _writable_presets.is_dir() or not (_writable_presets / 'sas87.json').exists():
+                    _writable_presets.mkdir(parents=True, exist_ok=True)
+                    _shutil.copytree(_bundled_presets, _writable_presets, dirs_exist_ok=True)
     except Exception:
         pass
     launcher = GTALauncher(game_path=game_path, db_path=db_path,
