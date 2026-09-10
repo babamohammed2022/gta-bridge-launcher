@@ -30,7 +30,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QComboBox, QFileDialog, QScrollArea, QFrame, QCheckBox,
     QAbstractItemView,
     QProgressBar, QTextEdit, QMessageBox, QSizePolicy, QSpinBox, QGroupBox,
-    QDialog, QInputDialog, QMenuBar, QProgressDialog, QPlainTextEdit,
+    QDialog, QInputDialog, QMenuBar, QMenu, QProgressDialog, QPlainTextEdit,
 )
 
 # --- backend imports (toolkit-agnostic) -------------------------------------
@@ -1630,6 +1630,8 @@ class ModsScreen(ScreenBase):
         self.ml_listw.itemDoubleClicked.connect(self._toggle_modloader)
         self.ml_listw.setAcceptDrops(True)
         self.ml_listw.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.ml_listw.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.ml_listw.customContextMenuRequested.connect(self._ml_context_menu)
         self.ml_listw.setDropIndicatorShown(True)
         self.ml_listw.dragEnterEvent = self._ml_drag_enter
         self.ml_listw.dragMoveEvent = lambda ev: ev.acceptProposedAction()
@@ -1985,6 +1987,101 @@ class ModsScreen(ScreenBase):
             msg += f' (skipped: {", ".join(skipped)})'
         self.status.setText(msg)
         self._fill_modloader()
+
+    # -- modloader context menu (Wrye Bash parity actions) --------------------
+    def _show_text_dialog(self, title, text):
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.resize(560, 420)
+        lay = QVBoxLayout(dlg)
+        te = QTextEdit()
+        te.setReadOnly(True)
+        te.setPlainText(text)
+        te.setStyleSheet(
+            f"QTextEdit {{ background:{T.COLOR_PANEL_BG_LIGHT}; color:{T.COLOR_TEXT_BODY};"
+            f"border:1px solid {T.COLOR_DARK_GREEN}; font-family:Consolas; font-size:11px; }}")
+        lay.addWidget(te)
+        cb = ActionButton('CLOSE')
+        cb.clicked.connect(dlg.accept)
+        lay.addWidget(cb)
+        dlg.exec_()
+
+    def _ml_context_menu(self, pos):
+        menu = QMenu(self)
+        item = self.ml_listw.itemAt(pos)
+        if item:
+            path, enabled = item.data(Qt.UserRole)
+            name = Path(path).name
+            menu.addAction('Enable' if not enabled else 'Disable',
+                           lambda: self._toggle_modloader(item))
+            menu.addSeparator()
+            menu.addAction('Show conflicts',
+                           lambda: self._ml_show_conflicts(name))
+            menu.addAction('Anneal / verify files',
+                           lambda: self._ml_anneal(name, path))
+            menu.addSeparator()
+            menu.addAction('Priority +10',
+                           lambda: self._ml_priority(name, +10))
+            menu.addAction('Priority -10',
+                           lambda: self._ml_priority(name, -10))
+            menu.addSeparator()
+            menu.addAction('Uninstall to vault', self._uninstall_selected)
+        else:
+            menu.addAction('Rescan folders', self._fill_modloader)
+        menu.exec_(self.ml_listw.mapToGlobal(pos))
+
+    def _ml_show_conflicts(self, name):
+        from managers import conflict_detector as cd
+        rep = cd.detect_conflicts(focus=name)
+        lines = []
+        for c in rep['conflicts']:
+            others = [p['name'] for p in c['packs'] if p['name'] != name]
+            if others:
+                lines.append(f"{c['rel']}  <->  {', '.join(others)}")
+        self._show_text_dialog(
+            f'Conflicts — {name}',
+            '\n'.join(lines) if lines else
+            'No file conflicts with other tracked packs.\n'
+            '(Only tracked installs are compared — install via INSTALL to track.)')
+
+    def _ml_anneal(self, name, path):
+        from managers import install_tracker as it
+        rep = it.anneal(name, path)
+        total = sum(len(v) for v in rep.values())
+        if total == 0 and not it.installed_files(name):
+            self.status.setText(f'{name}: not tracked — reinstall via INSTALL to track')
+            return
+        lines = [f"ok: {len(rep['ok'])}, missing: {len(rep['missing'])}, "
+                 f"modified-outside-launcher: {len(rep['mismatched'])}"]
+        for rel in rep['missing'][:50]:
+            lines.append(f'  MISSING: {rel}')
+        for rel in rep['mismatched'][:50]:
+            lines.append(f'  MODIFIED: {rel} (kept, never auto-overwritten)')
+        self._show_text_dialog(f'Anneal — {name}', '\n'.join(lines))
+
+    def _ml_priority(self, name, delta):
+        import re
+        ini = self._game_root() / 'modloader' / 'modloader.ini'
+        try:
+            text = ini.read_text(encoding='utf-8', errors='replace')
+        except OSError as e:
+            self.status.setText(f'priority failed: {e}')
+            return
+        key, sec, cur = name.lower(), '[Profiles.Default.Priority]', 50
+        if sec not in text:
+            text = text.rstrip('\n') + f'\n\n{sec}\n'
+        pat = re.compile(r'(?m)^' + re.escape(key) + r'\s*=\s*\d+')
+        mm = pat.search(text)
+        if mm:
+            cur = int(re.search(r'\d+', mm.group(0)).group(0))
+        new = max(0, min(100, cur + delta))
+        text = (pat.sub(f'{key} = {new}', text, count=1) if mm
+                else text.replace(sec, sec + f'\n{key} = {new}', 1))
+        try:
+            ini.write_text(text, encoding='utf-8')
+            self.status.setText(f'priority: {name} {cur} -> {new} (ML reads on next boot)')
+        except OSError as e:
+            self.status.setText(f'priority failed: {e}')
 
     # -- drag-drop mod install (zip/folder -> modloader/) ---------------------
     def _ml_drag_enter(self, ev):
