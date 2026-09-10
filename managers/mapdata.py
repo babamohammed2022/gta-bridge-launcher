@@ -70,9 +70,14 @@ def read_img_entries(path):
     return entries
 
 
-def audit_mod_textures(game_dir):
+def audit_mod_textures(game_dir, extra_known=None):
     """Cross-reference every modloader DFF's texture refs against available
-    TXD textures (modloader + game TXT sets). Returns dict report."""
+    TXD textures (modloader + game TXT sets). Returns dict report.
+
+    extra_known: optional set of additional known texture names (e.g. base
+    game IMG textures from vanilla_sa.db img_textures) — refs matching
+    these are NOT reported unresolved.
+    """
     game_dir = Path(game_dir)
     ml = game_dir / 'modloader'
     report = {
@@ -106,6 +111,7 @@ def audit_mod_textures(game_dir):
         except Exception:
             continue
         for r in refs:
-            if r not in report['txd_names']:
+            if r not in report['txd_names'] and (
+                    not extra_known or r not in extra_known):
                 report['unresolved'].setdefault(r, []).append(rel)
     return report

@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS base_files(path TEXT PRIMARY KEY, size INTEGER,
     sha1 TEXT, kind TEXT);
 CREATE TABLE IF NOT EXISTS img_entries(archive TEXT, name TEXT,
     offset INTEGER, size INTEGER, PRIMARY KEY (archive, name));
+CREATE TABLE IF NOT EXISTS img_textures(txd TEXT, tex TEXT,
+    PRIMARY KEY (txd, tex));
 CREATE TABLE IF NOT EXISTS ide_models(id TEXT, model TEXT, txd TEXT,
     src_file TEXT, PRIMARY KEY (id, src_file));
 CREATE TABLE IF NOT EXISTS txdp_links(child TEXT, parent TEXT,
@@ -92,6 +94,10 @@ def parse_ide(path):
             continue
         if section in ('objs', 'tobj', 'txdp'):
             rows.append((section, [x.strip() for x in ln.split(',')]))
+        elif section in ('cars', 'weap'):
+            # vehicles.ide/weapons.ide: id, model, txd, ... (same columns)
+            rows.append(('objs', [x.strip() for x in ln.split(',')]))
+            # NOTE: peds.ide 'peds' section is ped GROUPS, not models — skipped
     return rows
 
 
@@ -180,6 +186,38 @@ def build(game_dir, db_path):
     stats = {t: con.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0]
              for t in ('base_files', 'img_entries', 'ide_models',
                        'txdp_links', 'dat_refs')}
+    # --- base TXD texture-name index (kills audit false positives) ---------
+    try:
+        from managers import txdlite as _txd
+    except ImportError:
+        _txd = None
+    if _txd is not None:
+        for (arc,) in con.execute(
+                "SELECT DISTINCT archive FROM img_entries"):
+            ap = os.path.join(game, arc.replace('/', os.sep))
+            if not os.path.isfile(ap):
+                continue
+            try:
+                entries = mapdata.read_img_entries(ap)
+            except Exception:
+                continue
+            with open(ap, 'rb') as fh:
+                for name, off, size in entries:
+                    if not name.endswith('.txd') or size > 32 * 1048576:
+                        continue
+                    try:
+                        fh.seek(off)
+                        tf = _txd.TxdFile.loads(fh.read(size))
+                        for x in tf.textures:
+                            xn = str(getattr(x, 'name', '')).lower()
+                            if xn:
+                                con.execute('INSERT OR IGNORE INTO img_textures '
+                                            'VALUES (?,?)', (name, xn))
+                    except Exception:
+                        continue
+        con.commit()
+        stats['img_textures'] = con.execute(
+            'SELECT COUNT(*) FROM img_textures').fetchone()[0]
     con.close()
     return stats
 

@@ -72,6 +72,20 @@ def _data_dir() -> Path:
     return HERE / 'launcher_data'
 
 
+_BASE_TEX_CACHE: dict = {}
+
+
+def _base_tex_names():
+    """Cached set of base-game IMG texture names (kills audit false positives)."""
+    if 'names' not in _BASE_TEX_CACHE:
+        try:
+            from managers import vanilla_db
+            _BASE_TEX_CACHE['names'] = vanilla_db.base_texture_names()
+        except Exception:
+            _BASE_TEX_CACHE['names'] = set()
+    return _BASE_TEX_CACHE['names']
+
+
 def _open_archives_folder():
     """Open the archives folder in Explorer."""
     target = _data_dir() / 'dlc_presets' / 'archives'
@@ -2159,7 +2173,8 @@ class ModsScreen(ScreenBase):
                     self.listw.addItem(item)
         if 'orphan' in cats:
             try:
-                rep = mapdata.audit_mod_textures(str(self._game_root()))
+                rep = mapdata.audit_mod_textures(str(self._game_root()),
+                                                   extra_known=_base_tex_names())
                 for name in sorted(rep.get('unresolved', {}))[:40]:
                     counts['orphan'] += 1
                     item = QListWidgetItem(f'[ORPHAN REF] {name}')
@@ -3266,7 +3281,7 @@ class InspectorScreen(ScreenBase):
             return
         self.status.setText('auditing… (scans every DFF/TXD in modloader)')
         QApplication.processEvents()
-        rep = mapdata.audit_mod_textures(game)
+        rep = mapdata.audit_mod_textures(game, extra_known=_base_tex_names())
         lines = []
         lines.append(f"DFFs scanned:        {rep['dff_count']}")
         lines.append(f"TXD texture names:   {len(rep['txd_names'])}")

@@ -25,6 +25,19 @@ def open_db(path=None):
     return con
 
 
+def base_texture_names(con=None):
+    """All texture names inside base-game IMG TXDs (for audit dedup)."""
+    own = con is None
+    if own:
+        con = open_db()
+    try:
+        return {r[0] for r in
+                con.execute('SELECT tex FROM img_textures')}
+    finally:
+        if own:
+            con.close()
+
+
 def validate_install(game_dir, con=None):
     """Health-check a game install. Returns dict report (lists, all JSON-safe)."""
     game = os.path.abspath(game_dir)
