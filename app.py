@@ -1538,6 +1538,23 @@ class ModsScreen(ScreenBase):
         top.addWidget(rl)
         self.root.addLayout(top)
 
+        tabrow = QHBoxLayout()
+        self.tab_files = ActionButton('FILES')
+        self.tab_audit = ActionButton('AUDIT')
+        for tb in (self.tab_files, self.tab_audit):
+            tb.setCheckable(True)
+        self.tab_files.setChecked(True)
+        self.tab_files.clicked.connect(lambda: self._switch_modtab(0))
+        self.tab_audit.clicked.connect(lambda: self._switch_modtab(1))
+        tabrow.addWidget(self.tab_files)
+        tabrow.addWidget(self.tab_audit)
+        tabrow.addStretch(1)
+        self.root.addLayout(tabrow)
+        self.modstack = QStackedWidget()
+        self.files_page = QWidget()
+        self.files_layout = QVBoxLayout(self.files_page)
+        self.files_layout.setContentsMargins(0, 0, 0, 0)
+
         mid = QHBoxLayout()
         # left column: action buttons + list
         left = QVBoxLayout()
@@ -1625,11 +1642,24 @@ class ModsScreen(ScreenBase):
         prev_row.addStretch(1)
         right.addLayout(prev_row)
         mid.addLayout(right, 4)
-        self.root.addLayout(mid, 1)
+        self.files_layout.addLayout(mid, 1)
+        self.audit_page = QWidget()
+        _audit_layout = QVBoxLayout(self.audit_page)
+        _audit_layout.setContentsMargins(0, 0, 0, 0)
+        self._inspector = InspectorScreen(self.launcher)
+        _audit_layout.addWidget(self._inspector)
+        self.modstack.addWidget(self.files_page)
+        self.modstack.addWidget(self.audit_page)
+        self.root.addWidget(self.modstack, 1)
 
         self.status = body('Ready.')
         self.root.addWidget(self.status)
         self.reload()
+
+    def _switch_modtab(self, ix: int):
+        self.tab_files.setChecked(ix == 0)
+        self.tab_audit.setChecked(ix == 1)
+        self.modstack.setCurrentIndex(ix)
 
     # -- data -----------------------------------------------------------------
     def reload(self):
@@ -3021,13 +3051,12 @@ class MainWindow(QMainWindow):
         self.nav_buttons: list[NavButton] = []
         self.screens = QStackedWidget()
 
-        # Create all screens (indices: 0=PLAY,1=LIMITS,2=MODS,3=TXD EDITOR,
-        # 4=INSPECTOR,5=INSTALLER,6=WIZARD)
+        # Create all screens (indices: 0=PLAY,1=LIMITS,2=MOD MANAGER,3=TXD EDITOR,
+        # 4=INSTALLER,5=WIZARD; INSPECTOR lives inside MOD MANAGER's AUDIT tab)
         all_specs = [('PLAY', lambda: PlayScreen(launcher)),
                      ('LIMITS', lambda: LimitsScreen(launcher)),
-                     ('MODS', lambda: ModsScreen(launcher)),
+                     ('MOD MANAGER', lambda: ModsScreen(launcher)),
                      ('TXD EDITOR', lambda: TxdEditorScreen(launcher)),
-                     ('INSPECTOR', lambda: InspectorScreen(launcher)),
                      ('INSTALLER', lambda: InstallerScreen()),
                      ('WIZARD', lambda: WizardScreen())]
         self._screen_specs = all_specs
@@ -3110,22 +3139,23 @@ class MainWindow(QMainWindow):
 
         # define visible screens per mode
         if mode == 'wizard':
-            indices = [0, 6]  # PLAY, WIZARD
+            indices = [0, 5]  # PLAY, WIZARD
         elif mode == 'adv':
-            indices = [0, 1, 2, 3, 4, 5]  # all except WIZARD
+            indices = [0, 1, 2, 3, 4]  # all except WIZARD (INSPECTOR embedded)
         else:  # simple
-            indices = [0, 1, 2, 3, 4, 5]  # all except WIZARD
+            indices = [0, 1, 2, 3, 4]  # all except WIZARD (INSPECTOR embedded)
 
         for ix in indices:
             name = self._screen_specs[ix][0]
             b = NavButton(name)
+            b._screen_ix = ix
             b.clicked.connect(lambda _, i=ix: self._nav(i))
             self._nav_layout.addWidget(b)
             self.nav_buttons.append(b)
 
     def _nav(self, ix: int):
-        for j, b in enumerate(self.nav_buttons):
-            b.setChecked(j == ix)
+        for b in self.nav_buttons:
+            b.setChecked(getattr(b, '_screen_ix', -1) == ix)
         self.screens.setCurrentIndex(ix)
 
     def showEvent(self, ev):  # noqa: N802
