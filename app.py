@@ -1574,6 +1574,28 @@ class ModsScreen(ScreenBase):
         for b in (inst, uninst, backup, restore, scan, fixall):
             btns.addWidget(b)
         left.addLayout(btns)
+        inst.clicked.disconnect()
+        inst.clicked.connect(self._toggle_install_slide)
+        self.install_slide = QFrame()
+        self.install_slide.setStyleSheet(
+            f"QFrame {{ background:{T.COLOR_PANEL_BG_LIGHT};"
+            f"border:1px solid {T.COLOR_DARK_GREEN}; border-radius:2px; }}")
+        _isl = QHBoxLayout(self.install_slide)
+        _isl.setContentsMargins(6, 4, 6, 4)
+        _isl.addWidget(body('install from:'))
+        _zipb = ActionButton('FROM .ZIP')
+        _zipb.clicked.connect(self._install_from_zip)
+        _isl.addWidget(_zipb)
+        _foldb = ActionButton('FROM FOLDER')
+        _foldb.clicked.connect(self._install_from_folder)
+        _isl.addWidget(_foldb)
+        _isl.addStretch(1)
+        self.install_slide.setMaximumHeight(0)
+        self.install_slide.setVisible(False)
+        self.install_anim = QPropertyAnimation(self.install_slide, b'maximumHeight')
+        self.install_anim.setDuration(180)
+        self.install_anim.setEasingCurve(QEasingCurve.OutCubic)
+        left.addWidget(self.install_slide)
 
         self.listw = QListWidget()
         self.listw.setStyleSheet(
@@ -1833,6 +1855,92 @@ class ModsScreen(ScreenBase):
             self.status.setText(f"{'disabled' if enabled else 'enabled'} {src.name}")
         except OSError as e:
             QMessageBox.warning(self, 'Mod Loader', f'move failed: {e}')
+        self._fill_modloader()
+
+    # -- INSTALL slide-out (zip/folder -> readme-named -> modloader_back) ----
+    def _toggle_install_slide(self):
+        show = self.install_slide.maximumHeight() == 0
+        self.install_slide.setVisible(True)
+        self.install_anim.stop()
+        self.install_anim.setStartValue(self.install_slide.maximumHeight())
+        self.install_anim.setEndValue(46 if show else 0)
+        try:
+            self.install_anim.finished.disconnect()
+        except Exception:
+            pass
+        if not show:
+            self.install_anim.finished.connect(
+                lambda: self.install_slide.setVisible(False))
+        self.install_anim.start()
+
+    def _install_from_zip(self):
+        import zipfile
+        from managers import archive_probe as ap, install_tracker as it
+        fn, _ = QFileDialog.getOpenFileName(
+            self, 'Select mod archive', '', 'Archives (*.zip)')
+        if not fn:
+            return
+        try:
+            names = ap.list_archive(fn)
+        except Exception as e:
+            self.status.setText(f'install failed: {e}')
+            return
+        readme_text = ''
+        readme_rel = ap.find_readme(names)
+        if readme_rel:
+            try:
+                with zipfile.ZipFile(fn) as zf:
+                    readme_text = zf.read(readme_rel).decode(
+                        'utf-8', errors='replace')
+            except Exception:
+                pass
+        name, ok = QInputDialog.getText(
+            self, 'Install mod', 'Folder name:',
+            text=ap.suggest_pack_name(fn, names, readme_text))
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        _on, off_dir = self._ml_dirs()
+        dst = off_dir / name
+        if dst.exists():
+            self.status.setText(f'{name} already installed')
+            return
+        try:
+            dst.mkdir(parents=True)
+            with zipfile.ZipFile(fn) as zf:
+                zf.extractall(dst)
+            files = it.scan_tree(dst)
+            it.record(name, 'zip:' + Path(fn).name, files)
+            self.status.setText(
+                f'INSTALLED (disabled): {name} ({len(files)} files tracked)')
+        except OSError as e:
+            self.status.setText(f'install failed: {e}')
+        self._fill_modloader()
+
+    def _install_from_folder(self):
+        import shutil
+        from managers import install_tracker as it
+        src = QFileDialog.getExistingDirectory(self, 'Select mod folder')
+        if not src:
+            return
+        name, ok = QInputDialog.getText(
+            self, 'Install mod', 'Folder name:', text=Path(src).name)
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        _on, off_dir = self._ml_dirs()
+        dst = off_dir / name
+        if dst.exists():
+            self.status.setText(f'{name} already installed')
+            return
+        try:
+            shutil.copytree(src, dst)
+            files = it.scan_tree(dst)
+            it.record(name, 'folder:' + Path(src).name, files)
+            self.status.setText(
+                f'INSTALLED (disabled): {name} ({len(files)} files tracked)')
+        except OSError as e:
+            self.status.setText(f'install failed: {e}')
         self._fill_modloader()
 
     # -- drag-drop mod install (zip/folder -> modloader/) ---------------------
