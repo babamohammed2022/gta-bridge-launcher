@@ -1390,7 +1390,9 @@ class ModsScreen(ScreenBase):
         self.ck_mip = QCheckBox('Mipmaps')
         self.ck_orph = QCheckBox('Orphaned refs')
         self.ck_raw = QCheckBox('Raw configs')
-        for ck in (self.ck_txd, self.ck_mip, self.ck_orph, self.ck_raw):
+        self.ck_van = QCheckBox('Vanilla')
+        for ck in (self.ck_txd, self.ck_mip, self.ck_orph, self.ck_raw,
+                   self.ck_van):
             ck.setChecked(True)
             _fl.addWidget(ck)
         _fl.addStretch(1)
@@ -1888,7 +1890,9 @@ class ModsScreen(ScreenBase):
             on.add('orphan')
         if self.ck_raw.isChecked():
             on.add('rawcfg')
-        return on or {'txd', 'mipmap', 'orphan', 'rawcfg'}
+        if self.ck_van.isChecked():
+            on.add('vanilla')
+        return on or {'txd', 'mipmap', 'orphan', 'rawcfg', 'vanilla'}
 
     # -- UNINSTALL (multi-select -> uninstalled vault, restorable) ------------
     def _uninstall_selected(self):
@@ -2077,7 +2081,7 @@ class ModsScreen(ScreenBase):
         roots = [self._game_root() / 'modloader', self._game_root() / 'modloader_back']
         self.listw.clear()
         self._scan_results = []
-        counts = {'txd': 0, 'mipmap': 0, 'orphan': 0, 'rawcfg': 0}
+        counts = {'txd': 0, 'mipmap': 0, 'orphan': 0, 'rawcfg': 0, 'vanilla': 0}
         total = 0
         dff_refs: set = set()
         dff_packs: set = set()
@@ -2166,9 +2170,49 @@ class ModsScreen(ScreenBase):
                 return
         if 'rawcfg' in cats:
             counts['rawcfg'] = self._scan_rawcfg()
+        if 'vanilla' in cats:
+            counts['vanilla'] = self._scan_vanilla()
         self.status.setText(
             f'scanned {total} TXDs — BROKEN {counts["txd"]}, MIPMAP {counts["mipmap"]}, '
-            f'ORPHAN {counts["orphan"]}, RAWCFG {counts["rawcfg"]}')
+            f'ORPHAN {counts["orphan"]}, RAWCFG {counts["rawcfg"]}, '
+            f'VANILLA {counts["vanilla"]}')
+
+    def _scan_vanilla(self):
+        """Vanilla-manifest health: missing base files, unexpected ASIs,
+        IDE redefinitions, unresolvable txdp parents."""
+        from managers import vanilla_db
+        try:
+            rep = vanilla_db.validate_install(str(self._game_root()))
+        except Exception as e:
+            self.status.setText(f'vanilla DB failed: {e}')
+            return 0
+        found = 0
+        for rel in rep.get('missing_base', [])[:20]:
+            found += 1
+            item = QListWidgetItem(f'[VANILLA] missing/modified base file: {rel}')
+            item.setForeground(QColor(T.COLOR_YELLOW))
+            self.listw.addItem(item)
+        for fn in rep.get('unexpected_root_asi', [])[:20]:
+            found += 1
+            item = QListWidgetItem(f'[VANILLA] unexpected root binary: {fn}')
+            item.setForeground(QColor(T.COLOR_TEXT_DIM))
+            self.listw.addItem(item)
+        for r in rep.get('ide_redefinitions', [])[:40]:
+            found += 1
+            item = QListWidgetItem(
+                f"[VANILLA] id {r['id']} redefined: {r['model']} ({r['pack']}) "
+                f"vs vanilla {', '.join(r['vanilla'])}")
+            item.setForeground(QColor(T.COLOR_YELLOW))
+            self.listw.addItem(item)
+        txdp = rep.get('txdp_unresolved', [])
+        if txdp:
+            found += len(txdp)
+            item = QListWidgetItem(
+                f'[VANILLA] {len(txdp)} txdp parents unresolvable '
+                f'(e.g. {txdp[0]["parent"]}.txd missing — vehicle TXDs stripped?)')
+            item.setForeground(QColor(T.COLOR_YELLOW))
+            self.listw.addItem(item)
+        return found
 
     def _scan_rawcfg(self):
         """Raw data-file sanity: IDE duplicate model IDs, txdp syntax, gta.dat."""
