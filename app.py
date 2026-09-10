@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QPushButton, QVBoxLayout,
     QHBoxLayout, QGridLayout, QStackedWidget, QListWidget, QListWidgetItem,
     QLineEdit, QComboBox, QFileDialog, QScrollArea, QFrame, QCheckBox,
+    QAbstractItemView,
     QProgressBar, QTextEdit, QMessageBox, QSizePolicy, QSpinBox, QGroupBox,
     QDialog, QInputDialog, QMenuBar, QProgressDialog, QPlainTextEdit,
 )
@@ -1562,7 +1563,7 @@ class ModsScreen(ScreenBase):
         inst = ActionButton('INSTALL')
         inst.clicked.connect(lambda: self._set_enabled(True))
         uninst = ActionButton('UNINSTALL', danger=True)
-        uninst.clicked.connect(lambda: self._set_enabled(False))
+        uninst.clicked.connect(self._uninstall_selected)
         backup = ActionButton('BACKUP LIST')
         backup.clicked.connect(self._backup_list)
         restore = ActionButton('RESTORE ORIGINALS')
@@ -1628,6 +1629,7 @@ class ModsScreen(ScreenBase):
             f" color:{T.COLOR_ON_ACCENT}; }}")
         self.ml_listw.itemDoubleClicked.connect(self._toggle_modloader)
         self.ml_listw.setAcceptDrops(True)
+        self.ml_listw.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.ml_listw.setDropIndicatorShown(True)
         self.ml_listw.dragEnterEvent = self._ml_drag_enter
         self.ml_listw.dragMoveEvent = lambda ev: ev.acceptProposedAction()
@@ -1941,6 +1943,47 @@ class ModsScreen(ScreenBase):
                 f'INSTALLED (disabled): {name} ({len(files)} files tracked)')
         except OSError as e:
             self.status.setText(f'install failed: {e}')
+        self._fill_modloader()
+
+    # -- UNINSTALL (multi-select -> uninstalled vault, restorable) ------------
+    def _uninstall_selected(self):
+        import json
+        import shutil
+        from datetime import datetime
+        from managers import install_tracker as it
+        items = self.ml_listw.selectedItems()
+        if not items:
+            self.status.setText('UNINSTALL: select mod folders first (multi-select OK)')
+            return
+        vault = _data_dir() / 'uninstalled'
+        try:
+            vault.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            self.status.setText(f'UNINSTALL failed (vault): {e}')
+            return
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        moved, skipped = [], []
+        for item in items:
+            path, _enabled = item.data(Qt.UserRole)
+            src = Path(path)
+            if not src.exists() or not src.is_dir():
+                skipped.append(src.name)
+                continue
+            dest = vault / f'{src.name}_{stamp}'
+            try:
+                shutil.move(str(src), str(dest))
+                with open(dest / 'origin.json', 'w', encoding='utf-8') as f:
+                    json.dump({'name': src.name,
+                               'from': 'modloader_back' if 'modloader_back' in str(src) else 'modloader',
+                               'ts': stamp}, f)
+                it.unregister(src.name)
+                moved.append(src.name)
+            except OSError:
+                skipped.append(src.name)
+        msg = f'UNINSTALLED {len(moved)} -> vault'
+        if skipped:
+            msg += f' (skipped: {", ".join(skipped)})'
+        self.status.setText(msg)
         self._fill_modloader()
 
     # -- drag-drop mod install (zip/folder -> modloader/) ---------------------
