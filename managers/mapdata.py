@@ -45,13 +45,15 @@ def read_img_entries(path):
     if p.suffix.lower() == '.dir':
         img = p.with_suffix('.img')
         raw = p.read_bytes()
+        # .dir entries are 32 bytes: u32 offset, u32 size, char name[24]
         for i in range(0, len(raw) - 31, 32):
-            name = raw[i:i + 32].split(b'\x00')[0].decode('ascii', 'ignore').lower()
-            off, size = struct.unpack_from('<II', raw, i + 8)
+            name = raw[i + 8:i + 32].split(b'\x00')[0].decode('ascii', 'ignore').lower()
+            off, size = struct.unpack_from('<II', raw, i)
             if name:
                 entries.append((name, off * 2048, size * 2048))
         return entries
-    # v2: header 'VER2' + entry count, then 32-byte entries
+    # v2: header 'VER2' + entry count, then 32-byte entries:
+    # u32 offset, u32 size, char name[24] (null-padded)
     with open(p, 'rb') as fh:
         head = fh.read(8)
         if head[:4] != b'VER2':
@@ -59,8 +61,10 @@ def read_img_entries(path):
         (count,) = struct.unpack('<I', head[4:8])
         for _ in range(count):
             raw = fh.read(32)
+            if len(raw) < 32:
+                break
             off, size = struct.unpack_from('<II', raw, 0)
-            name = raw[16:48].split(b'\x00')[0].decode('ascii', 'ignore').lower()
+            name = raw[8:32].split(b'\x00')[0].decode('ascii', 'ignore').lower()
             if name:
                 entries.append((name, off * 2048, size * 2048))
     return entries
