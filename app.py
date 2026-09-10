@@ -2080,6 +2080,7 @@ class ModsScreen(ScreenBase):
         counts = {'txd': 0, 'mipmap': 0, 'orphan': 0, 'rawcfg': 0}
         total = 0
         dff_refs: set = set()
+        dff_packs: set = set()
         if 'orphan' in cats:
             for root in roots:
                 if not root.exists():
@@ -2087,6 +2088,18 @@ class ModsScreen(ScreenBase):
                 for p in sorted(root.rglob('*.dff')):
                     try:
                         dff_refs |= mapdata.dff_texture_refs(p.read_bytes())
+                        dff_packs.add(str(p.relative_to(root)).split('/')[0])
+                    except Exception:
+                        pass
+                for img in sorted(root.rglob('*.img')):
+                    try:
+                        for name, off, size in mapdata.read_img_entries(str(img)):
+                            if not name.endswith('.dff'):
+                                continue
+                            with open(str(img), 'rb') as fh:
+                                fh.seek(off)
+                                dff_refs |= mapdata.dff_texture_refs(fh.read(size))
+                            dff_packs.add(str(img.relative_to(root)).split('/')[0])
                     except Exception:
                         pass
         for root in roots:
@@ -2128,11 +2141,18 @@ class ModsScreen(ScreenBase):
                     except Exception:
                         names = set()
                     names.discard('')
-                    if names and not (names & dff_refs):
+                    pack = str(rel).replace('\\', '/').split('/')
+                    pack = pack[1] if len(pack) > 1 else ''
+                    if names and pack in dff_packs and not (names & dff_refs):
                         counts['orphan'] += 1
-                        item = QListWidgetItem(f'[ORPHAN TXD] {rel}  — no DFF references it')
-                        item.setForeground(QColor(T.COLOR_TEXT_DIM))
-                        self.listw.addItem(item)
+                        if counts['orphan'] <= 200:
+                            item = QListWidgetItem(f'[ORPHAN TXD] {rel}  — no DFF references it')
+                            item.setForeground(QColor(T.COLOR_TEXT_DIM))
+                            self.listw.addItem(item)
+                if counts['orphan'] == 201:
+                    item = QListWidgetItem('[ORPHAN TXD] … capped at 200 rows, see AUDIT tab for full list')
+                    item.setForeground(QColor(T.COLOR_TEXT_DIM))
+                    self.listw.addItem(item)
         if 'orphan' in cats:
             try:
                 rep = mapdata.audit_mod_textures(str(self._game_root()))
@@ -2176,21 +2196,31 @@ class ModsScreen(ScreenBase):
                     if section in ('objs', 'tobj'):
                         parts = [x.strip() for x in ln.split(',')]
                         if len(parts) >= 2 and parts[0].isdigit():
-                            idmap.setdefault(parts[0], []).append(
-                                f'{p.relative_to(root.parent)}:{parts[1]}')
+                            rel = str(p.relative_to(root.parent)).replace('\\', '/')
+                            segs = rel.split('/')
+                            pack = segs[1] if len(segs) > 1 else segs[0]
+                            idmap.setdefault(parts[0], []).append((pack, parts[1].lower()))
                     elif section == 'txdp':
                         if not re.match(r'^\s*[\w\-\.]+\s*,\s*[\w\-\.]+\s*$', ln):
                             found += 1
                             item = QListWidgetItem(f'[RAWCFG] {p.relative_to(root.parent)} — bad txdp line: {ln.strip()[:60]}')
                             item.setForeground(QColor(T.COLOR_YELLOW))
                             self.listw.addItem(item)
-        for _id, where in sorted(idmap.items()):
-            mods = {w.split(':')[0].split('/')[0] for w in where}
-            if len(mods) > 1:
+        for _id, where in sorted(idmap.items(), key=lambda kv: int(kv[0])):
+            packs = {p for p, _m in where}
+            models = {m for _p, m in where}
+            if len(packs) > 1 and len(models) > 1:
                 found += 1
-                item = QListWidgetItem(f'[RAWCFG] duplicate model id {_id} in: {", ".join(sorted(mods))[:80]}')
-                item.setForeground(QColor(T.COLOR_YELLOW))
-                self.listw.addItem(item)
+                if found <= 200:
+                    item = QListWidgetItem(
+                        f'[RAWCFG] model id {_id} redefined: ' +
+                        ', '.join(f'{m} ({p})' for p, m in sorted(set(where))[:4]))
+                    item.setForeground(QColor(T.COLOR_YELLOW))
+                    self.listw.addItem(item)
+        if found > 200:
+            item = QListWidgetItem(f'[RAWCFG] … {found - 200} more redefined ids (see AUDIT tab)')
+            item.setForeground(QColor(T.COLOR_TEXT_DIM))
+            self.listw.addItem(item)
         if not (self._game_root() / 'data' / 'gta.dat').exists():
             found += 1
             item = QListWidgetItem('[RAWCFG] game data/gta.dat missing!')
